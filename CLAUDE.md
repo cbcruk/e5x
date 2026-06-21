@@ -264,8 +264,9 @@ sales.item.price.$sum.get(); // 7
 - 검증: tarball을 별도 프로젝트에 설치 → `import { wrap } from 'e5x'` /
   `import { h } from 'e5x/jsx'`가 exports map으로 해석되고 타입까지 흐름을 tsc로 확인.
 
-**publish 결정은 보류 중** — npm publish는 되돌리기 어려운 외부 행위라 사용자 명시 승인 필요.
-패키징은 준비 끝. "이게 없으면 매일 불편한가"에 대한 본인 답이 publish 추진력. 아직 미정.
+**결정(2026-06): GitHub 공개, npm 보류.** repo: https://github.com/cbcruk/e5x (main).
+npm publish는 실제 소비처가 생기면 — "이게 없으면 매일 불편한가"의 답이 나오면 — 그때.
+패키징/타입/exports는 소비자 관점까지 검증 끝났으니 publish 자체는 명령 하나.
 
 ## 알려진 약점 (정직하게)
 
