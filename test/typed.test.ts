@@ -25,7 +25,7 @@ describe('schema-typed reads coerce by declared type', () => {
     );
 
     const vendor: string = sales.vendor;
-    const price: number = sales.item.where({ type: 'carrot' })[0]!.price;
+    const price: number = sales.item.$where({ type: 'carrot' })[0]!.price;
     const quantity: number = sales.item[0]!.quantity;
 
     expect(vendor).toBe('John');
@@ -46,8 +46,8 @@ describe('boolean coercion both directions', () => {
 
     todo.done = true;
     expect(todos.todo[0]!.$el.getAttribute('done')).toBe('true');
-    expect(todos.todo.where({ done: false }).length).toBe(0);
-    expect(todos.todo.where({ done: true }).length).toBe(1);
+    expect(todos.todo.$where({ done: false }).$length.get()).toBe(0);
+    expect(todos.todo.$where({ done: true }).$length.get()).toBe(1);
   });
 });
 
@@ -55,10 +55,10 @@ describe('push coerces typed values to the DOM', () => {
   it('writes attributes and round-trips through coercion', () => {
     const sales = wrap(setup(`<sales></sales>`), salesSchema);
 
-    sales.item.push({ type: 'oranges', price: 4, quantity: 12 });
+    sales.item.$push({ type: 'oranges', price: 4, quantity: 12 });
     expect(sales.item[0]!.$el.getAttribute('price')).toBe('4');
 
-    const quantity: number = sales.item.where({ type: 'oranges' })[0]!.quantity;
+    const quantity: number = sales.item.$where({ type: 'oranges' })[0]!.quantity;
     expect(quantity).toBe(12);
   });
 });
@@ -70,7 +70,7 @@ describe('typed subscribe', () => {
     sales.item.$length.subscribe((n) => seen.push(n));
     expect(seen).toEqual([1]);
 
-    sales.item.push({ type: 'b', price: 2, quantity: 2 });
+    sales.item.$push({ type: 'b', price: 2, quantity: 2 });
     await flush();
     expect(seen.at(-1)).toBe(2);
   });

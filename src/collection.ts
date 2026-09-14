@@ -2,7 +2,15 @@ import { wrapNode } from './wrap';
 import { createColumn } from './column';
 import { derived, sameElements } from './reactive';
 import { matches } from './match';
-import { childrenNamed, childDescriptor, isLeaf, readRaw, fromDom, toDom } from './coerce';
+import {
+  childrenNamed,
+  childDescriptor,
+  isLeaf,
+  isLibraryName,
+  readRaw,
+  fromDom,
+  toDom,
+} from './coerce';
 import type {
   LeafDescriptor,
   LooseCollection,
@@ -51,7 +59,7 @@ export function createCollection(config: CollectionConfig): LooseCollection {
   }
 
   const api = {
-    where(
+    $where(
       predicate: Record<string, unknown> | ((element: LooseWrapped) => boolean),
     ): LooseCollection {
       return createCollection({
@@ -62,7 +70,7 @@ export function createCollection(config: CollectionConfig): LooseCollection {
         compute: () => compute().filter((element) => matches(element, predicate, descriptor)),
       });
     },
-    sort(
+    $sort(
       field: string | ((a: LooseWrapped, b: LooseWrapped) => number),
       direction: SortDirection = 'asc',
     ): LooseCollection {
@@ -85,7 +93,7 @@ export function createCollection(config: CollectionConfig): LooseCollection {
         compute: () => [...compute()].sort(compare),
       });
     },
-    deep(name: string): LooseCollection {
+    $deep(name: string): LooseCollection {
       return createCollection({
         root,
         owner: null,
@@ -95,9 +103,9 @@ export function createCollection(config: CollectionConfig): LooseCollection {
           compute().flatMap((element) => Array.from(element.querySelectorAll(name))),
       });
     },
-    push(data: Record<string, unknown>): LooseWrapped {
+    $push(data: Record<string, unknown>): LooseWrapped {
       if (!owner || !tagName) {
-        throw new Error('push() is only available on a child collection');
+        throw new Error('$push() is only available on a child collection');
       }
       const element = owner.ownerDocument.createElement(tagName);
       for (const [key, value] of Object.entries(data)) {
@@ -116,9 +124,6 @@ export function createCollection(config: CollectionConfig): LooseCollection {
     },
     get $length(): ReadableAtom<number> {
       return derived(root, () => compute().length);
-    },
-    get length(): number {
-      return compute().length;
     },
     [Symbol.iterator](): Iterator<LooseWrapped> {
       return compute()
@@ -146,12 +151,12 @@ export function createCollection(config: CollectionConfig): LooseCollection {
           const element = compute()[index];
           return element ? wrapNode(element, descriptor) : undefined;
         }
-        return fieldAccess(key);
+        return isLibraryName(key) ? undefined : fieldAccess(key);
       }
       return undefined;
     },
     set(target, key, value) {
-      if (typeof key !== 'string' || Object.hasOwn(target, key)) {
+      if (typeof key !== 'string' || Object.hasOwn(target, key) || isLibraryName(key)) {
         return false;
       }
       if (isIndex(key) !== null) {

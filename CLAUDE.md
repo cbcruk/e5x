@@ -31,18 +31,19 @@ shape-matched 축이 비어 있었다. 결론: **두 축은 직교하므로 하�
 const sales = wrap(document.querySelector('sales'));
 
 // shape-matched access (read)
-sales.item                                    // live collection
-sales.item.where({ type: 'carrot' }).quantity // → "10"
-sales.vendor                                  // attribute access
-sales.deep('price')                           // descendant 축 (E4X의 .. 대용)
+sales.item                                        // live collection
+sales.item.$where({ type: 'carrot' })[0].quantity // → 10
+sales.item.quantity                               // Column (열 전체)
+sales.vendor                                      // attribute access
+sales.$deep('price')                              // descendant 축 (E4X의 .. 대용)
 
 // write — 같은 path
 delete sales.item[0];
-sales.item.push({ type: 'oranges', price: 4 });
-sales.item.where({ type: 'oranges' }).quantity = 4;
+sales.item.$push({ type: 'oranges', price: 4 });
+sales.item.$where({ type: 'oranges' })[0].quantity = 4;
 
 // subscribe — 같은 path
-sales.item.where({ done: false }).$length.subscribe(n => ...)
+sales.item.$where({ done: false }).$length.subscribe(n => ...)
 ```
 
 **핵심 불변식**: *같은 path 표현*이 read / write / subscribe 세 축 모두에 작동한다.
@@ -60,8 +61,8 @@ E4X가 가졌던 read/write 대칭에 subscribe 축을 하나 더 붙인 형태.
 **런타임으로 가능 (Phase 1 범위)**:
 
 - Proxy 기반 dot-notation traversal
-- predicate filter → `.where({...})` 또는 `.where(el => ...)` 메서드로 대체
-- descendant 축 → `.deep(name)` 메서드로 대체
+- predicate filter → `.$where({...})` 또는 `.$where(el => ...)` 메서드로 대체
+- descendant 축 → `.$deep(name)` 메서드로 대체
 - attribute access → child name과 통합 namespace (아래 참조)
 - reactivity / two-way binding
 
@@ -79,6 +80,22 @@ E4X는 `@`로 해결했다. JS에선 **single namespace + escape hatch**로 간�
 - 이유: 실무에서 HTML attr과 child tag는 거의 안 충돌. 흔한 케이스를 짧게 만드는 게
   드문 케이스의 명시성보다 중요.
 
+### 라이브러리 어휘 vs 데이터 어휘 — **결정됨 (2026-09)**
+
+attr/child 충돌보다 흔한 건 **API 이름과 필드 이름** 충돌(`length`, `sort`, `push`…)이었다.
+결정: **bare = 데이터, `$` = 라이브러리.** `$where/$sort/$push/$deep/$length/$sum/$el/$attr`.
+
+- 근거: E4X는 동사를 호출(`length()`)로 데이터와 갈랐다 — Proxy get은 호출 여부를 모르므로
+  JS에선 불가, 대신 접두사로 가른다. MongoDB(`$where/$sort/$push`), Vue(`$el/$attrs`) 선례.
+  기존 `where`(bare) + `$sum`(`$`) 혼재도 규칙 하나로 정리됨.
+- **예외는 atom 프로토콜 `get`/`subscribe`** (+ JS 훅 `toString`/`valueOf`). collection이
+  nanostores atom / Svelte store 계약을 만족해야 "atom과 query 동격"이 유지됨. Promise의
+  `then`처럼 프로토콜 이름은 bare로 둔다.
+- 예약 이름(위 4개 + `$*`)을 schema에 쓰면 **컴파일 에러**(필드를 짚는 메시지) + `wrap()` 런타임
+  TypeError. loose 모드에서 그 이름의 열은 collection 레벨에서 접근 불가(원소 레벨은 가능).
+- sync `length` 제거 → `$length.get()`. 알 수 없는 `$` 이름은 데이터로 해석하지 않고 `undefined`.
+- 비용: `.$where`가 `.where`보다 시끄럽다. 충돌 없는 이름 공간과 맞바꾼 것.
+
 ### live collection의 정체성
 
 `query()` 실험에서 검증된 모델 유지:
@@ -86,7 +103,7 @@ E4X는 `@`로 해결했다. JS에선 **single namespace + escape hatch**로 간�
 - `get()` / `subscribe()` 인터페이스 = nanostores atom과 동일 shape (Standard Schema)
 - 그래서 `effect(query(...), ...)`가 atom과 동등하게 작동 — atom과 query가 동격의
   reactive source가 되는 것이 설계의 수확
-- `.where()`는 새 live derived set을 반환 (computed atom처럼)
+- `.$where()`는 새 live derived set을 반환 (computed atom처럼)
 
 ## 기술 스택 / 구현 메모
 
@@ -143,7 +160,7 @@ Phase 1: 런타임 Proxy 코어 **구현 완료 + 검증됨** (`pnpm test` 7/7 �
 구현된 것:
 
 - `wrap(element)` — element당 안정적 Proxy (WeakMap 캐시, path-stable identity)
-- live collection — index 접근, `length`/`$length`, `where()`, `deep()`, `push()`, `delete`,
+- live collection — index 접근, `$length`, `$where()`, `$deep()`, `$push()`, `delete`,
   iteration, `get()`/`subscribe()` (nanostores atom shape)
 - read / write / subscribe 세 축이 **같은 path 표현**으로 작동 (핵심 불변식 검증됨)
 - 단일 MutationObserver가 모든 live set 구동 (`childList + subtree + attributes`)
@@ -157,7 +174,7 @@ Phase 1: 런타임 Proxy 코어 **구현 완료 + 검증됨** (`pnpm test` 7/7 �
   즉 새 필드는 attribute로 생성됨.
 - **collection.field 접근**은 첫 멤버에 위임 (Phase 1 한계 — E4X의 "전체 map" 의미론 아님).
 - **leaf element coercion**: 단일 멤버 collection / wrapped leaf는 `Symbol.toPrimitive`로
-  textContent에 coerce → `String(sales.item.where(...).quantity) === "10"`.
+  textContent에 coerce → `String(sales.item.$where(...).quantity) === "10"`.
 - **subscribe**는 현재 값으로 즉시 1회 발화 후 mutation마다 (nanostores 동작).
 - **escape hatch**: `.$el`(raw element), `.$attr.name`(attribute 강제).
 
@@ -173,10 +190,10 @@ const sales = wrap(el, {
 } as const);
 
 sales.vendor                              // string
-sales.item.where({ type: 'carrot' }).price  // number  ← 추론됨
+sales.item.$where({ type: 'carrot' }).price  // number  ← 추론됨
 sales.item[0].quantity                    // number
 sales.item.$length.subscribe((n) => ...)  // n: number, annotation 불필요
-sales.item.push({ type: 'x', price: 4 })  // typed write
+sales.item.$push({ type: 'x', price: 4 })  // typed write
 ```
 
 descriptor 문법:
@@ -202,15 +219,15 @@ verb 금지)상 `rows.column('amount')` 같은 verb는 불가. 결론:
 - **collection field = Column**: `rows.amount` → `Column<number>` —
   `.$sum / .$avg / .$min / .$max / .$values / .$length`, indexable, iterable,
   단일 원소는 첫 값으로 coerce. 집계 atom은 mutation에 반응(atom = query 동격 재확인).
-- scalar가 필요하면 `[0]`로 명시: `rows.where({id:1})[0].amount`
+- scalar가 필요하면 `[0]`로 명시: `rows.$where({id:1})[0].amount`
 
 추가된 것:
 
-- `sort(field, 'asc'|'desc')` + `sort(comparator)` → 정렬된 live collection.
+- `$sort(field, 'asc'|'desc')` + `$sort(comparator)` → 정렬된 live collection.
   descriptor가 비교 방식 결정(number는 수치, string은 사전식).
 - **bulk write 비대칭 문제**: `rows.active = false`는 read 타입이 `Column<boolean>`이라
   TS로 표현 불가(read=Column/write=scalar 비대칭은 mapped type 한계).
-  → typed bulk write는 **iteration**: `for (const r of rows.where(...)) r.active = false`.
+  → typed bulk write는 **iteration**: `for (const r of rows.$where(...)) r.active = false`.
   → loose 모드에서만 property-assign bulk 허용(런타임은 양쪽 다 동작).
 
 데모: `index.html` + `demo/main.ts` (filter/sort/edit/delete/add/집계/live total).
@@ -277,18 +294,17 @@ npm publish는 실제 소비처가 생기면 — "이게 없으면 매일 불편
 - **collection/Column에 DOM 의미 없는 대입 거부**: `c[0] = x`는 TypeError(이전엔 내부 api
   객체에 `"0"`이 박혀 영구 오염), API 멤버(`where` 등) 덮어쓰기와 Column 대입/삭제도 거부.
 - **loose 모드의 없는 이름 → 빈 collection (truthy) 유지 결정**. E4X와 같은 의미론이고,
-  빈 상태에서 시작하는 loose `push`/`subscribe`가 이것에 의존. 존재 확인은 `.length`로
+  빈 상태에서 시작하는 loose `$push`/`subscribe`가 이것에 의존. 존재 확인은 `$length.get()`으로
   (README에 문서화).
 
 ## 알려진 약점 (정직하게)
 
 - bulk write read/write 비대칭 → typed에선 iteration 강제.
-- `deep()` 결과는 항상 loose (descendant는 schema에 없음). 의도된 한계.
+- `$deep()` 결과는 항상 loose (descendant는 schema에 없음). 의도된 한계.
 - descriptor의 child는 1-tuple만 — heterogeneous children 미지원.
-- **API 이름 vs 필드 이름 충돌** (미해결, 최우선): schema 필드가 `length`/`sort`/`get`/
-  `push`/`where`/`deep`/`subscribe`면 collection에서 API가 이기고 타입은 거짓말함
-  (`number & Column<number>`). escape hatch 없음. 예약 이름을 `$` 네임스페이스로 옮길지 결정 필요.
-- 읽기 경로 메모이제이션 없음: `where().sort()` 체인에 인덱스 접근마다 전체 재계산 (n² 패턴).
+- 필드 이름 `get`/`subscribe`는 schema에서 금지, loose 모드에선 collection 레벨 열로 접근 불가
+  (atom 프로토콜과 맞바꾼 비용).
+- 읽기 경로 메모이제이션 없음: `$where().$sort()` 체인에 인덱스 접근마다 전체 재계산 (n² 패턴).
 - JSX spike의 `h`는 전역 `document` 의존(SSR 불가) + 전역 `JSX` 네임스페이스 선언
   (React와 충돌 가능). spike 한정.
 

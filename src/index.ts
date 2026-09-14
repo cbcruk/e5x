@@ -7,6 +7,8 @@ export type {
   FieldDescriptor,
   LeafDescriptor,
   SortDirection,
+  ReservedName,
+  ValidDescriptor,
   Predicate,
   WritableFields,
   ReadableAtom,

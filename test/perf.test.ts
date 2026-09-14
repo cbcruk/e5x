@@ -22,7 +22,7 @@ describe('observer fan-out only recomputes affected subtrees', () => {
     let predicateCalls = 0;
     const stops = trees.map((tree) =>
       tree.row
-        .where(() => {
+        .$where(() => {
           predicateCalls += 1;
           return true;
         })
@@ -30,7 +30,7 @@ describe('observer fan-out only recomputes affected subtrees', () => {
     );
 
     predicateCalls = 0;
-    trees[0]!.row.push({ n: 2 });
+    trees[0]!.row.$push({ n: 2 });
     await flush();
 
     expect(predicateCalls).toBe(ROWS + 1);

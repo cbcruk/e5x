@@ -13,6 +13,18 @@ export interface NodeDescriptor {
 
 export type SortDirection = 'asc' | 'desc';
 
+// `$`-prefixed names belong to the library, bare names to the data. The atom protocol
+// (`get` / `subscribe`) and JS coercion hooks are the only bare names the library claims.
+export type ReservedName = 'get' | 'subscribe' | 'toString' | 'valueOf' | `$${string}`;
+
+export type ValidDescriptor<N> = {
+  [K in keyof N]: K extends ReservedName
+    ? `e5x: field name "${K & string}" is reserved`
+    : N[K] extends readonly [infer Child]
+      ? readonly [ValidDescriptor<Child>]
+      : N[K];
+};
+
 type LeafValue<F extends LeafDescriptor> = F extends 'string'
   ? string
   : F extends 'number'
@@ -54,13 +66,12 @@ export type Predicate<N> =
 export interface WrappedBase {
   readonly $el: Element;
   readonly $attr: Record<string, string | null>;
-  deep(name: string): LooseCollection;
+  $deep(name: string): LooseCollection;
 }
 
 export type Wrapped<N> = WrappedBase & ElementFields<N>;
 
 export interface Column<T> {
-  readonly length: number;
   readonly $length: ReadableAtom<number>;
   readonly $values: ReadableAtom<T[]>;
   readonly $sum: ReadableAtom<number>;
@@ -74,13 +85,12 @@ export interface Column<T> {
 }
 
 interface CollectionBase<N> {
-  readonly length: number;
   readonly $length: ReadableAtom<number>;
-  where(predicate: Predicate<N>): Collection<N>;
-  sort(field: SortKey<N>, direction?: SortDirection): Collection<N>;
-  sort(comparator: (a: Wrapped<N>, b: Wrapped<N>) => number): Collection<N>;
-  deep(name: string): LooseCollection;
-  push(data: WritableFields<N>): Wrapped<N>;
+  $where(predicate: Predicate<N>): Collection<N>;
+  $sort(field: SortKey<N>, direction?: SortDirection): Collection<N>;
+  $sort(comparator: (a: Wrapped<N>, b: Wrapped<N>) => number): Collection<N>;
+  $deep(name: string): LooseCollection;
+  $push(data: WritableFields<N>): Wrapped<N>;
   get(): Wrapped<N>[];
   subscribe(listener: (value: Wrapped<N>[]) => void): () => void;
   readonly [index: number]: Wrapped<N>;
@@ -92,22 +102,21 @@ export type Collection<N> = CollectionBase<N> & CollectionFields<N>;
 export interface LooseWrapped {
   readonly $el: Element;
   readonly $attr: Record<string, string | null>;
-  deep(name: string): LooseCollection;
+  $deep(name: string): LooseCollection;
   [key: string]: any;
 }
 
 export interface LooseCollection {
-  readonly length: number;
   readonly $length: ReadableAtom<number>;
-  where(
+  $where(
     predicate: Record<string, unknown> | ((element: LooseWrapped) => boolean),
   ): LooseCollection;
-  sort(
+  $sort(
     field: string | ((a: LooseWrapped, b: LooseWrapped) => number),
     direction?: SortDirection,
   ): LooseCollection;
-  deep(name: string): LooseCollection;
-  push(data: Record<string, unknown>): LooseWrapped;
+  $deep(name: string): LooseCollection;
+  $push(data: Record<string, unknown>): LooseWrapped;
   get(): LooseWrapped[];
   subscribe(listener: (value: LooseWrapped[]) => void): () => void;
   [index: number]: LooseWrapped;

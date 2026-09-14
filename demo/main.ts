@@ -17,12 +17,12 @@ type Field = 'name' | 'dept' | 'amount';
 let sortField: Field = 'amount';
 let sortDir: 'asc' | 'desc' = 'desc';
 
-function visible(): ReturnType<typeof data.row.where> {
-  return activeOnly.checked ? data.row.where({ active: true }) : data.row.sort('name');
+function visible(): ReturnType<typeof data.row.$where> {
+  return activeOnly.checked ? data.row.$where({ active: true }) : data.row.$sort('name');
 }
 
-function rows(): ReturnType<typeof data.row.sort> {
-  return visible().sort(sortField, sortDir);
+function rows(): ReturnType<typeof data.row.$sort> {
+  return visible().$sort(sortField, sortDir);
 }
 
 function refresh(): void {
@@ -71,7 +71,7 @@ function refresh(): void {
     }),
   );
 
-  countOut.textContent = String(view.length);
+  countOut.textContent = String(view.$length.get());
   sumOut.textContent = String(view.amount.$sum.get());
   const avg = view.amount.$avg.get();
   avgOut.textContent = Number.isNaN(avg) ? '–' : avg.toFixed(1);
@@ -111,7 +111,7 @@ for (const th of document.querySelectorAll<HTMLTableCellElement>('th[data-field]
 activeOnly.addEventListener('change', refresh);
 
 document.querySelector('#add')!.addEventListener('click', () => {
-  data.row.push({ name: 'New', dept: 'eng', amount: 0, active: true });
+  data.row.$push({ name: 'New', dept: 'eng', amount: 0, active: true });
   refresh();
 });
 

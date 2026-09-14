@@ -1,6 +1,21 @@
 import { createCollection } from './collection';
-import { childrenNamed, readRaw, fromDom, toDom, isLeaf, childDescriptor } from './coerce';
-import type { LooseCollection, LooseWrapped, NodeDescriptor, Wrapped } from './types';
+import {
+  assertValidDescriptor,
+  childrenNamed,
+  readRaw,
+  fromDom,
+  toDom,
+  isLeaf,
+  isLibraryName,
+  childDescriptor,
+} from './coerce';
+import type {
+  LooseCollection,
+  LooseWrapped,
+  NodeDescriptor,
+  ValidDescriptor,
+  Wrapped,
+} from './types';
 
 const cache = new WeakMap<Element, Map<NodeDescriptor | null, object>>();
 
@@ -66,11 +81,14 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
       if (key === '$attr') {
         return attributeView(target);
       }
-      if (key === 'deep') {
+      if (key === '$deep') {
         return (name: string) => descendants(target, name);
       }
       if (typeof key === 'symbol') {
         return Reflect.get(target, key);
+      }
+      if (isLibraryName(key)) {
+        return undefined;
       }
 
       const field = descriptor?.[key];
@@ -93,6 +111,9 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
       if (typeof key === 'symbol') {
         return Reflect.set(target, key, value);
       }
+      if (isLibraryName(key)) {
+        return false;
+      }
       const children = childrenNamed(target, key);
       if (children.length > 0) {
         children[0]!.textContent = toDom(value);
@@ -110,8 +131,11 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
 export function wrap(element: Element): LooseWrapped;
 export function wrap<const N extends NodeDescriptor>(
   element: Element,
-  descriptor: N,
+  descriptor: N extends ValidDescriptor<N> ? N : ValidDescriptor<N>,
 ): Wrapped<N>;
 export function wrap(element: Element, descriptor?: NodeDescriptor): unknown {
+  if (descriptor) {
+    assertValidDescriptor(descriptor);
+  }
   return wrapNode(element, descriptor ?? null);
 }

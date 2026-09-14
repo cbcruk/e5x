@@ -1,5 +1,28 @@
 import type { FieldDescriptor, LeafDescriptor, NodeDescriptor } from './types';
 
+export function isLibraryName(key: string): boolean {
+  return key.startsWith('$');
+}
+
+const RESERVED = new Set(['get', 'subscribe', 'toString', 'valueOf']);
+const validated = new WeakSet<NodeDescriptor>();
+
+export function assertValidDescriptor(descriptor: NodeDescriptor): void {
+  if (validated.has(descriptor)) {
+    return;
+  }
+  for (const [key, field] of Object.entries(descriptor)) {
+    if (RESERVED.has(key) || isLibraryName(key)) {
+      throw new TypeError(`e5x: field name "${key}" is reserved`);
+    }
+    const child = childDescriptor(field);
+    if (child) {
+      assertValidDescriptor(child);
+    }
+  }
+  validated.add(descriptor);
+}
+
 export function childrenNamed(element: Element, name: string): Element[] {
   return Array.from(element.children).filter(
     (child) => child.localName === name || child.localName === name.toLowerCase(),

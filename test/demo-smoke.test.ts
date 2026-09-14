@@ -29,10 +29,10 @@ describe('demo index.html wires up against the real markup', () => {
     loadIndexBody();
     const data = wrap(document.querySelector('rows')!, schema);
 
-    expect(data.row.length).toBe(5);
+    expect(data.row.$length.get()).toBe(5);
     expect(data.row.amount.$sum.get()).toBe(600);
-    expect(data.row.where({ active: true }).amount.$sum.get()).toBe(380);
-    expect(data.row.sort('amount', 'desc').get().map((r) => r.name)).toEqual([
+    expect(data.row.$where({ active: true }).amount.$sum.get()).toBe(380);
+    expect(data.row.$sort('amount', 'desc').get().map((r) => r.name)).toEqual([
       'Carol',
       'Erin',
       'Alice',

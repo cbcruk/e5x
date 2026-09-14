@@ -63,9 +63,6 @@ export function createColumn(config: ColumnConfig): Column<Leaf> {
     get $max(): ReadableAtom<Leaf> {
       return derived(root, () => extreme(values(), 1));
     },
-    get length(): number {
-      return values().length;
-    },
     [Symbol.iterator](): Iterator<Leaf> {
       return values()[Symbol.iterator]();
     },
