@@ -38,11 +38,6 @@
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "pnpm test && pnpm build"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
-  },
   "devDependencies": {
     "@types/node": "^26.0.0",
     "happy-dom": "^15.11.0",
