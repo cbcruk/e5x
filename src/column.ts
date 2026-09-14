@@ -90,5 +90,11 @@ export function createColumn(config: ColumnConfig): Column<Leaf> {
       }
       return undefined;
     },
+    set() {
+      return false;
+    },
+    deleteProperty() {
+      return false;
+    },
   }) as unknown as Column<Leaf>;
 }

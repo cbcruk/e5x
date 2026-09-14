@@ -151,13 +151,18 @@ export function createCollection(config: CollectionConfig): LooseCollection {
       return undefined;
     },
     set(target, key, value) {
-      if (typeof key === 'string' && !Object.hasOwn(target, key) && isIndex(key) === null) {
-        for (const element of compute()) {
-          wrapNode(element, descriptor)[key] = value;
-        }
-        return true;
+      if (typeof key !== 'string' || Object.hasOwn(target, key)) {
+        return false;
       }
-      return Reflect.set(target, key, value);
+      if (isIndex(key) !== null) {
+        throw new TypeError(
+          `e5x: cannot assign to collection index [${key}]; write a field instead (collection[${key}].field = value)`,
+        );
+      }
+      for (const element of compute()) {
+        wrapNode(element, descriptor)[key] = value;
+      }
+      return true;
     },
     deleteProperty(_target, key) {
       if (typeof key === 'string') {

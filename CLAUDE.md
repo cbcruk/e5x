@@ -268,11 +268,27 @@ sales.item.price.$sum.get(); // 7
 npm publish는 실제 소비처가 생기면 — "이게 없으면 매일 불편한가"의 답이 나오면 — 그때.
 패키징/타입/exports는 소비자 관점까지 검증 끝났으니 publish 자체는 명령 하나.
 
+## 버그 수정 라운드 (2026-09) — `pnpm test` 31/31
+
+- **observe 대상 = 구독된 노드 자체** (이전: `ownerDocument.documentElement`). detached 트리,
+  shadow root에서 반응성이 조용히 죽던 문제 수정. `getRootNode()`가 아니라 노드 자체인 이유:
+  MutationObserver 등록은 노드를 따라다니므로 fragment/detached 트리가 나중에 document로
+  이동해도 유지됨. observer는 여전히 단일 인스턴스.
+- **collection/Column에 DOM 의미 없는 대입 거부**: `c[0] = x`는 TypeError(이전엔 내부 api
+  객체에 `"0"`이 박혀 영구 오염), API 멤버(`where` 등) 덮어쓰기와 Column 대입/삭제도 거부.
+- **loose 모드의 없는 이름 → 빈 collection (truthy) 유지 결정**. E4X와 같은 의미론이고,
+  빈 상태에서 시작하는 loose `push`/`subscribe`가 이것에 의존. 존재 확인은 `.length`로
+  (README에 문서화).
+
 ## 알려진 약점 (정직하게)
 
 - bulk write read/write 비대칭 → typed에선 iteration 강제.
 - `deep()` 결과는 항상 loose (descendant는 schema에 없음). 의도된 한계.
 - descriptor의 child는 1-tuple만 — heterogeneous children 미지원.
+- **API 이름 vs 필드 이름 충돌** (미해결, 최우선): schema 필드가 `length`/`sort`/`get`/
+  `push`/`where`/`deep`/`subscribe`면 collection에서 API가 이기고 타입은 거짓말함
+  (`number & Column<number>`). escape hatch 없음. 예약 이름을 `$` 네임스페이스로 옮길지 결정 필요.
+- 읽기 경로 메모이제이션 없음: `where().sort()` 체인에 인덱스 접근마다 전체 재계산 (n² 패턴).
 - JSX spike의 `h`는 전역 `document` 의존(SSR 불가) + 전역 `JSX` 네임스페이스 선언
   (React와 충돌 가능). spike 한정.
 

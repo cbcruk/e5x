@@ -57,6 +57,17 @@ at that empty seat, with a reactivity layer E4X never had.
 `sales.vendor` works whether `vendor` is a child element or an attribute (child wins on
 conflict). Escape hatches: `.$attr.vendor` (force attribute), `.$el` (raw element).
 
+In loose mode a name that is neither a child nor an attribute reads as an **empty collection**,
+as in E4X. That is what lets `wrap(todos).todo.push(...)` and `.todo.$length.subscribe(...)`
+work before the first child exists — but an empty collection is still an object, so it is
+truthy. Test for presence with `.length`, not truthiness:
+
+```ts
+if (row.note.length > 0) { /* ... */ } // not: if (row.note)
+```
+
+With a schema, missing leaves coerce instead (`''`, `NaN`, `false`).
+
 ## Sort & filter
 
 ```ts

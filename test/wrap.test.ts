@@ -75,6 +75,81 @@ describe('subscribe through the same path', () => {
   });
 });
 
+describe('subscribe outside the main document tree', () => {
+  function track(el: Element): { seen: number[]; list: any } {
+    const list = wrap(el);
+    const seen: number[] = [];
+    list.item.$length.subscribe((n: number) => seen.push(n));
+    return { seen, list };
+  }
+
+  it('reacts on a detached tree', async () => {
+    const { seen, list } = track(document.createElement('list'));
+    list.item.push({ a: 1 });
+    await flush();
+    expect(seen).toEqual([0, 1]);
+  });
+
+  it('reacts inside a shadow root', async () => {
+    document.body.innerHTML = '<div></div>';
+    const shadow = document.body.firstElementChild!.attachShadow({ mode: 'open' });
+    shadow.innerHTML = '<list></list>';
+    const { seen, list } = track(shadow.firstElementChild!);
+    list.item.push({ a: 1 });
+    await flush();
+    expect(seen).toEqual([0, 1]);
+  });
+
+  it('stays live after a detached tree moves into the document', async () => {
+    document.body.innerHTML = '';
+    const fragment = document.createDocumentFragment();
+    fragment.append(document.createElement('list'));
+    const { seen, list } = track(fragment.firstElementChild!);
+    document.body.append(fragment);
+    await flush();
+    list.item.push({ a: 1 });
+    await flush();
+    expect(seen).toEqual([0, 1]);
+  });
+});
+
+describe('collection writes that have no DOM meaning are rejected', () => {
+  it('throws on index assignment and leaves the collection intact', () => {
+    const sales = wrap(setup(`<sales><item type="a"></item></sales>`));
+    const items = sales.item;
+    expect(() => {
+      items[0] = 'x' as any;
+    }).toThrow(TypeError);
+    expect(items[0].type).toBe('a');
+  });
+
+  it('refuses to overwrite collection API members', () => {
+    const items = wrap(setup(`<sales><item></item></sales>`)).item;
+    expect(() => {
+      items.where = 1;
+    }).toThrow(TypeError);
+    expect(typeof items.where).toBe('function');
+  });
+
+  it('refuses to assign into a column', () => {
+    const column = wrap(setup(`<sales><item price="1"></item></sales>`)).item.price;
+    expect(() => {
+      column[0] = 'x';
+    }).toThrow(TypeError);
+    expect(column[0]).toBe('1');
+  });
+});
+
+describe('missing names in loose mode', () => {
+  it('read as an empty, truthy collection that still accepts push', () => {
+    const todos = wrap(setup(`<todos></todos>`));
+    expect(todos.todo.length).toBe(0);
+    expect(Boolean(todos.todo)).toBe(true);
+    todos.todo.push({ text: 'a' });
+    expect(todos.todo[0].text).toBe('a');
+  });
+});
+
 describe('identity', () => {
   it('returns a stable proxy per element', () => {
     const sales = wrap(setup(`<sales><item></item></sales>`));

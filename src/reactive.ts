@@ -3,7 +3,7 @@ import type { ReadableAtom } from './types';
 type Listener = (records: MutationRecord[]) => void;
 
 const listeners = new Set<Listener>();
-const observedRoots = new WeakSet<Node>();
+const observedNodes = new WeakSet<Node>();
 let observer: MutationObserver | null = null;
 
 function notify(records: MutationRecord[]): void {
@@ -12,20 +12,17 @@ function notify(records: MutationRecord[]): void {
   }
 }
 
-function observationRoot(node: Node): Node {
-  return node.ownerDocument?.documentElement ?? node;
-}
-
+// Observe the node itself rather than its document: a registration travels with the node,
+// so detached trees, shadow roots, and trees later moved into the document all stay live.
 function ensureObserving(node: Node): void {
-  const root = observationRoot(node);
-  if (observedRoots.has(root)) {
+  if (observedNodes.has(node)) {
     return;
   }
   if (!observer) {
     observer = new MutationObserver(notify);
   }
-  observer.observe(root, { childList: true, subtree: true, attributes: true });
-  observedRoots.add(root);
+  observer.observe(node, { childList: true, subtree: true, attributes: true });
+  observedNodes.add(node);
 }
 
 export function watch(node: Node, listener: Listener): () => void {
