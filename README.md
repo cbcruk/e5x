@@ -132,11 +132,9 @@ changes that land in the same tick.
   view lives as long as the function does.
 - e5x never disconnects its `MutationObserver`, and it doesn't need to: in a browser,
   observing a node does not keep it alive.
-- A collection keeps its last result until it recomputes. A subscribed collection recomputes
-  as soon as the mutation arrives. One that nobody subscribes to keeps elements removed from
-  the DOM reachable until its next read. The same goes for its deps: a view remembers the last
-  value of each dep, so a collection passed as a dep keeps its removed elements reachable
-  until the view itself is read again.
+- Cached results are released once a mutation under the view is delivered, and dep values are
+  remembered weakly. A view you hold but never read again keeps no removed elements alive,
+  whether they left the view itself or a collection passed to it as a dep.
 
 Verified with garbage-collection tests in Chromium (`test/lifecycle.test.ts`). happy-dom's
 `MutationObserver` keeps observed nodes alive until `disconnect()`, so under happy-dom, detached

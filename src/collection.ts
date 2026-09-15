@@ -1,6 +1,14 @@
 import { wrapNode } from './wrap'
 import { createColumn } from './column'
-import { derived, memo, NO_INPUTS, sameElements, type Inputs } from './reactive'
+import {
+  cell,
+  derived,
+  holdUntilMutation,
+  memo,
+  NO_INPUTS,
+  sameElements,
+  type Inputs,
+} from './reactive'
 import { createStaleCheck, createTracker, registerSource, tracked } from './dev'
 import { byIdentity, weakCache, type IdentityCache } from './cache'
 import { matches } from './match'
@@ -74,17 +82,24 @@ export function createCollection(config: CollectionConfig): LooseCollection {
   // A view built from a user function tracks what the function reads and, on cache hits,
   // verifies that the cached result still holds. Development only.
   const tracker = config.label ? createTracker(config.label, root, deps) : null
-  let last: Element[] | undefined
-  const stale = tracker ? createStaleCheck(tracker, config.compute, () => last, sameElements) : null
+  // Released with the memo's own cache, so the development check keeps no removed elements alive.
+  const last = cell<Element[]>()
+  const stale = tracker
+    ? createStaleCheck(tracker, config.compute, () => last.value, sameElements)
+    : null
   // Deps and checks accumulate down the path: anything derived from this view inherits them.
   const inputs: Inputs = stale ? { deps, checks: [...parent.checks, stale.check] } : parent
 
   const compute = memo(
     root,
     () => {
-      last = tracked(tracker, config.compute)
-      stale?.computed()
-      return last
+      const members = tracked(tracker, config.compute)
+      if (stale) {
+        last.value = members
+        holdUntilMutation(root, last)
+        stale.computed()
+      }
+      return members
     },
     inputs,
   )

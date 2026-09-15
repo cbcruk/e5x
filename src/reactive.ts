@@ -10,6 +10,11 @@ const versions = new WeakMap<Node, number>()
 // nodes it actually bumped instead of every subscriber on the page.
 const listenersByNode = new Map<Node, Set<Listener>>()
 const dirty = new Set<Node>()
+// Cached values per observed node, released when a mutation bumps the node's version. A bump
+// invalidates them anyway; releasing them at once means a view nobody reads again does not keep
+// removed elements alive. Cells are plain objects, not closures, so a registered cell does not
+// keep the view that owns it alive.
+const cellsByNode = new WeakMap<Node, Set<Cell<unknown>>>()
 let observer: MutationObserver | null = null
 let notifyScheduled = false
 
@@ -39,6 +44,11 @@ function ingest(records: MutationRecord[]): void {
       const version = versions.get(node)
       if (version !== undefined) {
         versions.set(node, version + 1)
+        const cells = cellsByNode.get(node)
+        if (cells) {
+          for (const cell of cells) release(cell)
+          cellsByNode.delete(node)
+        }
         if (listenersByNode.has(node)) {
           dirty.add(node)
         }
@@ -77,6 +87,63 @@ function version(node: Node): number {
 }
 
 /**
+ * A value cached until the next mutation under the node it is held for.
+ *
+ * @template T The cached value.
+ */
+export interface Cell<T> {
+  /** The cached value, or `undefined` once released. */
+  value: T | undefined
+  /** The node version the value was computed at, or `-1` when there is no value. */
+  version: number
+  /** The deps' values the value was computed with, objects held weakly. */
+  deps: unknown[]
+}
+
+/** Creates an empty {@linkcode Cell}. */
+export function cell<T>(): Cell<T> {
+  return { value: undefined, version: -1, deps: [] }
+}
+
+function release(cell: Cell<unknown>): void {
+  cell.value = undefined
+  cell.version = -1
+  cell.deps = []
+}
+
+/**
+ * Releases `cell` at the next mutation under `node`.
+ *
+ * Call it after each computation that fills the cell; a released cell must be registered again.
+ */
+export function holdUntilMutation(node: Node, cell: Cell<unknown>): void {
+  let cells = cellsByNode.get(node)
+  if (!cells) {
+    cells = new Set()
+    cellsByNode.set(node, cells)
+  }
+  cells.add(cell)
+}
+
+// Dep values are remembered only to compare with `Object.is`. An object is held weakly: once it
+// is collected, no current value can be the same object, so the comparison fails as it should.
+class Weak {
+  constructor(readonly ref: WeakRef<object>) {}
+}
+
+function remember(value: unknown): unknown {
+  return (typeof value === 'object' && value !== null) || typeof value === 'function'
+    ? new Weak(new WeakRef(value))
+    : value
+}
+
+function same(remembered: unknown, value: unknown): boolean {
+  return remembered instanceof Weak
+    ? remembered.ref.deref() === value
+    : Object.is(remembered, value)
+}
+
+/**
  * What a derived value depends on besides its node's subtree, plus the development checks to run when it serves a cached result.
  *
  * Both flow down a path to everything derived from it.
@@ -98,22 +165,30 @@ export const NO_INPUTS: Inputs = { deps: [], checks: [] }
  * `Object.is`-equal value. Deps are pulled on read, so a held view is correct without anyone
  * subscribing. Pending mutation records are taken first, so a read right after a synchronous
  * write is never stale. On a cache hit the inputs' checks run.
+ *
+ * The cached value is released at the next mutation under `node`, and object dep values are
+ * remembered weakly, so a memo nobody reads again keeps neither removed elements nor old dep
+ * values alive.
  */
 export function memo<T>(node: Node, compute: () => T, inputs: Inputs = NO_INPUTS): () => T {
-  let cachedVersion = -1
-  let cachedDeps: unknown[] = []
-  let cached: T
+  const cached = cell<T>()
   return () => {
     const current = version(node)
     const values = inputs.deps.map((dep) => dep.get())
-    if (current !== cachedVersion || values.some((value, i) => !Object.is(value, cachedDeps[i]))) {
-      cached = compute()
-      cachedVersion = current
-      cachedDeps = values
-    } else {
-      for (const check of inputs.checks) check()
+    if (
+      current !== cached.version ||
+      values.length !== cached.deps.length ||
+      values.some((value, i) => !same(cached.deps[i], value))
+    ) {
+      const value = compute()
+      cached.value = value
+      cached.version = current
+      cached.deps = values.map(remember)
+      holdUntilMutation(node, cached)
+      return value
     }
-    return cached
+    for (const check of inputs.checks) check()
+    return cached.value as T
   }
 }
 

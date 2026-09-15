@@ -95,26 +95,33 @@ function readUnheldViews(): WeakRef<object>[] {
   return views.map((view) => new WeakRef(view))
 }
 
-function removeAfterRead(then: 'nothing' | 'read' | 'subscribed'): WeakRef<object> {
-  const { sales } = ledger()
-  if (then === 'subscribed') sales.item.subscribe(() => {})
-  sales.item.$length.get()
-  const element = sales.item[0]!.$el
-  element.remove()
-  if (then === 'read') sales.item.$length.get()
-  return new WeakRef(element)
+interface HeldViews {
+  element: WeakRef<object>
+  lengths: { get(): number }[]
 }
 
-function removeFromDep(): { element: WeakRef<object>; view: { $length: { get(): number } } } {
+// Reads several views over the members, removes one member, and reads nothing afterwards.
+function removeAfterRead(subscribe: boolean): HeldViews {
+  const { sales } = ledger()
+  const cheap = (item: { price: number }): boolean => item.price < 3
+  const views = [sales.item, sales.item.$where(cheap), sales.item.$sort('price'), sales.item.price]
+  if (subscribe) views[0]!.subscribe(() => {})
+  for (const view of views) view.$length.get()
+  const element = sales.item[0]!.$el
+  element.remove()
+  return { element: new WeakRef(element), lengths: views.map((view) => view.$length) }
+}
+
+function removeFromDep(): HeldViews {
   const { sales } = ledger()
   document.body.insertAdjacentHTML('beforeend', '<tags><tag></tag><tag></tag></tags>')
   const tags = wrap(document.querySelector('tags')!)
-  const view = sales.item.$where(() => tags.tag.$length.get() > 0, [tags.tag])
+  const view = sales.item.$where(() => tags.tag.$length.get() > 1, [tags.tag])
   view.$length.get()
   const element = tags.tag[0]!.$el
   element.remove()
   tags.tag.$length.get()
-  return { element: new WeakRef(element), view }
+  return { element: new WeakRef(element), lengths: [view.$length] }
 }
 
 function observeDetachedTree(): WeakRef<object> {
@@ -171,24 +178,26 @@ describe('cached views', () => {
 })
 
 describe('removed elements', () => {
-  // A memoized collection keeps its last result until it recomputes. Subscribers recompute
-  // on the mutation itself, so only a view nobody subscribes to keeps them, until it is read.
-  it('stay reachable from an unsubscribed collection until its next read', async () => {
-    expect(await collected(removeAfterRead('nothing'))).toBe(false)
-    expect(await collected(removeAfterRead('read'))).toBe(true)
-  })
-
-  it('are released by a subscribed collection once the mutation is delivered', async () => {
-    expect(await collected(removeAfterRead('subscribed'))).toBe(true)
-  })
-
-  // A view compares each dep's last value on read; for a collection dep that value holds
-  // wrapped elements, so rereading the dep alone does not release them.
-  it('stay reachable from a held view that has a collection as a dep until the view is read', async () => {
-    const { element, view } = removeFromDep()
-    expect(await collected(element)).toBe(false)
-    view.$length.get()
+  // A memoized view drops its cached result when a mutation lands under its root, so a view
+  // nobody reads again does not keep the elements that mutation removed.
+  it('are released by held views without another read', async () => {
+    const { element, lengths } = removeAfterRead(false)
     expect(await collected(element)).toBe(true)
+    expect(lengths.map((length) => length.get())).toEqual([1, 0, 1, 1])
+  })
+
+  it('are released by a subscribed collection', async () => {
+    const { element, lengths } = removeAfterRead(true)
+    expect(await collected(element)).toBe(true)
+    expect(lengths[0]!.get()).toBe(1)
+  })
+
+  // A view remembers each dep's last value to compare on read. For a collection dep that value
+  // holds wrapped elements, so it is remembered weakly.
+  it('are released by a held view that has the collection they left as a dep', async () => {
+    const { element, lengths } = removeFromDep()
+    expect(await collected(element)).toBe(true)
+    expect(lengths[0]!.get()).toBe(0)
   })
 })
 
