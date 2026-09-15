@@ -63,6 +63,21 @@ describe('push coerces typed values to the DOM', () => {
   });
 });
 
+describe('delete through the same typed path', () => {
+  it('removes by index and rejects assignment', () => {
+    const sales = wrap(
+      setup(`<sales><item type="a" price="1" quantity="1"></item><item type="b" price="2" quantity="2"></item></sales>`),
+      salesSchema,
+    );
+    delete sales.item[0];
+    expect(sales.item.type.get()).toEqual(['b']);
+
+    // @ts-expect-error — only wrapped elements type-check, and even those throw
+    expect(() => (sales.item[0] = { type: 'x' })).toThrow(TypeError);
+    expect(() => (sales.item[0] = sales.item[0]!)).toThrow(TypeError);
+  });
+});
+
 describe('typed subscribe', () => {
   it('emits numbers without annotation', async () => {
     const sales = wrap(setup(`<sales><item type="a" price="1" quantity="1"></item></sales>`), salesSchema);

@@ -93,7 +93,9 @@ interface CollectionBase<N> {
   $push(data: WritableFields<N>): Wrapped<N>;
   get(): Wrapped<N>[];
   subscribe(listener: (value: Wrapped<N>[]) => void): () => void;
-  readonly [index: number]: Wrapped<N>;
+  // Writable only so `delete collection[i]` type-checks; TS cannot allow delete while
+  // forbidding assignment, and assigning an element here throws at runtime.
+  [index: number]: Wrapped<N>;
   [Symbol.iterator](): Iterator<Wrapped<N>>;
 }
 

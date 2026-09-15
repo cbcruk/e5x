@@ -340,8 +340,10 @@ Column이 아니라 Collection을 반환했다(타입은 Column). 이제 schema�
 - 필드 이름 `get`/`subscribe`는 schema에서 금지, loose 모드에선 collection 레벨 열로 접근 불가
   (atom 프로토콜과 맞바꾼 비용).
 - 구독자끼리 계산 공유 없음: 같은 `$where`를 20곳에서 구독하면 20번 계산 (뷰가 독립 객체).
-- typed collection의 index signature가 `readonly`라 README의 `delete sales.item[0]`이 tsc에서
-  막힘 (런타임은 동작). readonly를 풀면 `c[0] = x`가 타입 통과 후 런타임 throw — 결정 필요.
+- typed collection의 index signature는 **writable** (결정 2026-09): TS는 `delete`만 허용하고
+  대입을 막는 방법이 없다(readonly는 둘 다 막음). E4X식 `delete sales.item[0]` 대칭을 택함.
+  구멍: `c[0] = otherRow`(wrapped 원소)는 타입 통과 후 런타임 TypeError. 일반 객체 대입은 타입 에러.
+  대입을 element 교체로 의미 부여하는 안은 보류(복사 vs 이동 의미론 미결).
 - JSX spike의 `h`는 전역 `document` 의존(SSR 불가) + 전역 `JSX` 네임스페이스 선언
   (React와 충돌 가능). spike 한정.
 

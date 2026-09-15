@@ -47,7 +47,7 @@ describe('reads are memoized until the DOM changes', () => {
     data.row[0]!.amount = 100;
     expect(amounts.$sum.get()).toBe(115);
 
-    data.row[0]!.$el.remove();
+    delete data.row[0];
     expect(amounts.get()).toEqual([2, 3, 10]);
   });
 
