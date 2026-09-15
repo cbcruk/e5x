@@ -446,8 +446,9 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 
 ## 데모 배포 (GitHub Pages)
 
-- https://cbcruk.github.io/e5x/ — `.github/workflows/pages.yml`이 main push마다 typecheck → test →
-  `pnpm build:demo`(`vite.demo.config.ts`, 출력 `demo-dist/`) → Pages 배포. 테스트가 깨지면 배포 안 됨.
+- https://cbcruk.github.io/e5x/ — `.github/workflows/ci.yml`(PR과 main push에서 검사)이 main에서
+  **성공한 뒤에만** `pages.yml`이 `pnpm build:demo`(`vite.demo.config.ts`, 출력 `demo-dist/`) → Pages
+  배포(`workflow_run`). 검사가 깨지면 배포 안 됨.
 - 라이브러리 빌드(`vite.config.ts`)와 설정 분리. `base: './'`라 서브패스(`/e5x/`)에서 동작.
 - Vite 앱 빌드가 `process.env.NODE_ENV`를 치환해 배포본에선 dev 체크가 제거됨(번들에 `process` 0회).
 - CI 재현성을 위해 `packageManager: pnpm@11.22.0` 고정.
@@ -472,6 +473,29 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 - 린트: `vp check`(Oxfmt + Oxlint)가 CI에서 tsc 앞에 돈다. `unicorn/no-useless-spread`는
   `reactive.ts`의 listener 스냅숏에서 **오탐** — 그 자리만 disable. 이 규칙의 `--fix`를 무심코
   적용하면 순회 중 구독 해제 버그가 생긴다.
+
+## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (실험, 2026-09~)
+
+```
+이슈 → 브랜치(issue-<번호>/<요약>) → 로컬 검사 → 초안 PR(CI 실행)
+     → 리뷰어 에이전트 → 결과를 PR 댓글로 기록 → 수정 → 재리뷰(최대 2회)
+     → 사용자 확인 → squash 머지(`Closes #N`로 이슈 닫힘, 브랜치 삭제)
+```
+
+- **리뷰어**: `.claude/agents/reviewer.md`. 새 맥락으로 띄운다(작성자의 판단 과정을 넘기지 않음).
+  읽기·명령 실행만 하고 수정·git 상태 변경·GitHub 쓰기는 금지. 이슈의 완료 조건, 동작 오류, 프로젝트
+  규칙, 테스트 충분성을 본다. 지적은 must-fix / suggestion으로 나누고, suggestion은 이유를 적고 받지
+  않을 수 있다. 재리뷰 2회 후에도 남는 이견은 사용자에게.
+- **머지**: 실험 기간에는 매번 사용자 확인 후. 기본 squash, 일부러 나눈 커밋이 있을 때만 rebase.
+- **PR 한 번에 하나**: 워크플로·빌드 설정을 건드리는 이슈끼리 충돌하므로 순서대로.
+- GitHub은 자기 PR 승인을 막으므로 리뷰 결과는 댓글로 남긴다.
+
+### 실험 기록
+
+리뷰어를 계속 쓸지 #1~#4를 마친 뒤 이 표로 판단한다.
+
+| PR  | 이슈 | 지적(must-fix / suggestion) | 반영 | 오탐 | 리뷰 횟수 | 비고 |
+| --- | ---- | --------------------------- | ---- | ---- | --------- | ---- |
 
 ## 알려진 약점 (정직하게)
 

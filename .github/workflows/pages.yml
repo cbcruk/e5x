@@ -1,7 +1,10 @@
 name: Deploy demo to GitHub Pages
 
+# Deploys only after CI passes on a push to main, so a failing check still blocks the deploy.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -14,18 +17,18 @@ concurrency:
 
 jobs:
   build:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # Installs vp (version from the pnpm catalog), Node, and runs `vp install`.
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: voidzero-dev/setup-vp@v1.20.0
         with:
           node-version: '24'
           cache: true
-      - run: vp check
-      - run: vp run typecheck
-      - run: vp run docs:check
-      - run: vp run test
       - run: vp run build:demo
       - uses: actions/upload-pages-artifact@v5
         with:

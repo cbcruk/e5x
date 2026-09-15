@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs vp (version from the pnpm catalog), Node, and runs `vp install`.
+      - uses: voidzero-dev/setup-vp@v1.20.0
+        with:
+          node-version: '24'
+          cache: true
+      - run: vp check
+      - run: vp run typecheck
+      - run: vp run docs:check
+      - run: vp run test
+      - run: vp build
+      - run: vp run build:demo
