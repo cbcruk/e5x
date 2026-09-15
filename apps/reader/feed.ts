@@ -20,12 +20,17 @@ const rssSchema = {
   channel: [{ title: '<string>', item: [rssItem] }],
 } as const
 
+// Atom text constructs carry a `type` attribute and their text in the same element. A leaf reads
+// only the text, so they are child collections here and read through `atomText`.
+const atomText = [{ type: 'string' }] as const
+
 const atomEntry = {
   title: '<string>',
   id: '<string>',
   published: '<string>',
   updated: '<string>',
-  summary: '<string>',
+  summary: atomText,
+  content: atomText,
   link: [{ href: 'string', rel: 'string' }],
   author: [{ name: '<string>' }],
   read: 'boolean',
@@ -35,6 +40,7 @@ const atomEntry = {
 const atomSchema = {
   title: '<string>',
   link: [{ href: 'string', rel: 'string' }],
+  author: [{ name: '<string>' }],
   entry: [atomEntry],
 } as const
 
@@ -67,10 +73,26 @@ export interface Feed {
   readonly unread: ReadableAtom<number>
 }
 
-// Text of HTML markup, never inserted as HTML.
-function plainText(markup: string): string {
+// Text of HTML markup, never inserted as HTML. Script and style contents are not text.
+function htmlText(markup: string): string {
   const html = new DOMParser().parseFromString(markup, 'text/html')
+  for (const element of html.querySelectorAll('script, style, noscript, template')) element.remove()
   return (html.body.textContent ?? '').replace(/\s+/g, ' ').trim()
+}
+
+// An Atom text construct: `type="html"` holds escaped markup, `xhtml` inline elements, and `text`
+// (the default) plain text.
+function atomTextOf(element: Element | undefined): string {
+  if (!element) return ''
+  const type = element.getAttribute('type')
+  const text = element.textContent ?? ''
+  return type === 'html' ? htmlText(text) : text.replace(/\s+/g, ' ').trim()
+}
+
+// RFC 4287 4.2.7.2: a link without `rel` is `alternate`. An attribute absent from a `'string'`
+// field reads as `''`.
+function alternateLink(links: readonly { href: string; rel: string }[]): string {
+  return links.find((link) => link.rel === '' || link.rel === 'alternate')?.href ?? ''
 }
 
 // FRICTION 1: `channel.link` reads the empty `<atom:link>` that comes first, because fields match
@@ -84,12 +106,17 @@ function rssSiteLink(channel: Element): string {
 
 // FRICTION 2: entries of two formats have different shapes, so each gets an adapter. A schema
 // cannot say "title here, or title there".
+// Keys are per feed: a guid only has to be unique within its feed, and an entry may have none.
+function keyOf(feed: Feed, id: string, fallback: string): string {
+  return `${feed.url} ${id || fallback}`
+}
+
 function rssEntry(feed: Feed, item: RssItem): Entry {
   return {
     element: item.$el,
     feed,
     get key() {
-      return item.guid || item.link
+      return keyOf(feed, item.guid || item.link, `${item.title}|${item.pubDate}`)
     },
     get title() {
       return item.title
@@ -104,7 +131,7 @@ function rssEntry(feed: Feed, item: RssItem): Entry {
       return Date.parse(item.pubDate)
     },
     get summary() {
-      return plainText(item.description)
+      return htmlText(item.description)
     },
     get read() {
       return item.read
@@ -121,27 +148,31 @@ function rssEntry(feed: Feed, item: RssItem): Entry {
   }
 }
 
-function atomEntryOf(feed: Feed, entry: AtomEntry): Entry {
+function atomEntryOf(feed: Feed, entry: AtomEntry, feedAuthor: () => string): Entry {
   return {
     element: entry.$el,
     feed,
     get key() {
-      return entry.id
+      return keyOf(
+        feed,
+        entry.id || alternateLink(entry.link.get()),
+        `${entry.title}|${entry.updated}`,
+      )
     },
     get title() {
       return entry.title
     },
     get link() {
-      return (entry.link.$where({ rel: 'alternate' })[0] ?? entry.link[0])?.href ?? ''
+      return alternateLink(entry.link.get())
     },
     get author() {
-      return entry.author[0]?.name ?? ''
+      return entry.author[0]?.name || feedAuthor()
     },
     get date() {
       return Date.parse(entry.published || entry.updated)
     },
     get summary() {
-      return plainText(entry.summary)
+      return atomTextOf(entry.summary[0]?.$el) || atomTextOf(entry.content[0]?.$el)
     },
     get read() {
       return entry.read
@@ -209,8 +240,10 @@ export function parseFeed(url: string, text: string): Feed {
       url,
       kind: 'atom',
       title: atom.title,
-      site: (atom.link.$where({ rel: 'alternate' })[0] ?? atom.link[0])?.href ?? '',
-      entries: entryList<AtomEntry>(atom.entry, (entry) => atomEntryOf(feed, entry)),
+      site: alternateLink(atom.link.get()),
+      entries: entryList<AtomEntry>(atom.entry, (entry) =>
+        atomEntryOf(feed, entry, () => atom.author[0]?.name ?? ''),
+      ),
       unread: atom.entry.$where({ read: false }).$length,
     }
     return feed
@@ -241,5 +274,24 @@ export function collectState(feeds: readonly Feed[]): SavedState {
   return {
     read: entries.filter((entry) => entry.read).map((entry) => entry.key),
     starred: entries.filter((entry) => entry.starred).map((entry) => entry.key),
+  }
+}
+
+/**
+ * Decodes feed bytes with the charset the response names, else the one the XML declaration names.
+ *
+ * `Response.text()` always decodes UTF-8, which garbles feeds in other encodings.
+ */
+export function decodeFeed(bytes: ArrayBuffer, contentType: string | null): string {
+  const declared =
+    /charset=["']?([\w-]+)/i.exec(contentType ?? '')?.[1] ??
+    /^\s*<\?xml[^>]*encoding=["']([\w-]+)["']/.exec(
+      new TextDecoder('latin1').decode(bytes.slice(0, 200)),
+    )?.[1] ??
+    'utf-8'
+  try {
+    return new TextDecoder(declared).decode(bytes)
+  } catch {
+    return new TextDecoder('utf-8').decode(bytes)
   }
 }

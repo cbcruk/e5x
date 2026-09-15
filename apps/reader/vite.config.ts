@@ -34,11 +34,19 @@ function feedProxy(): Plugin {
         res.end(JSON.stringify(sources))
       })
       server.middlewares.use('/api/feed', async (req, res) => {
+        // Never let a feed's response run as a page on this origin, whatever it claims to be.
+        res.setHeader('x-content-type-options', 'nosniff')
+        res.setHeader('content-security-policy', 'sandbox')
+        const fail = (status: number, message: string): void => {
+          res.statusCode = status
+          res.setHeader('content-type', 'text/plain; charset=utf-8')
+          res.end(message)
+        }
         const url = new URL(req.url ?? '', 'http://localhost').searchParams.get('url') ?? ''
         // Only subscribed feeds: the proxy must not fetch arbitrary URLs for whoever can reach it.
+        // Redirects are followed, as feeds move.
         if (!subscriptions().includes(url)) {
-          res.statusCode = 403
-          res.end('not a subscribed feed')
+          fail(403, 'not a subscribed feed')
           return
         }
         try {
@@ -46,12 +54,19 @@ function feedProxy(): Plugin {
             headers: { 'user-agent': 'e5x-reader (+https://github.com/cbcruk/e5x)' },
             signal: AbortSignal.timeout(15_000),
           })
-          res.statusCode = upstream.status
-          res.setHeader('content-type', upstream.headers.get('content-type') ?? 'application/xml')
-          res.end(await upstream.text())
+          if (!upstream.ok) {
+            fail(502, `upstream ${upstream.status}`)
+            return
+          }
+          // Bytes as they came, with only the charset kept, so the browser decodes them itself.
+          const charset = /charset=["']?([\w-]+)/i.exec(upstream.headers.get('content-type') ?? '')
+          res.setHeader(
+            'content-type',
+            `application/xml${charset ? `; charset=${charset[1]}` : ''}`,
+          )
+          res.end(Buffer.from(await upstream.arrayBuffer()))
         } catch (error) {
-          res.statusCode = 502
-          res.end(`fetch failed: ${error instanceof Error ? error.message : String(error)}`)
+          fail(502, `fetch failed: ${error instanceof Error ? error.message : String(error)}`)
         }
       })
     },

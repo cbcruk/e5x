@@ -1,6 +1,6 @@
 /// <reference types="vite-plus/client" />
 import { describe, it, expect, beforeEach } from 'vite-plus/test'
-import { collectState, parseFeed } from '../apps/reader/feed'
+import { collectState, decodeFeed, parseFeed } from '../apps/reader/feed'
 import { mount } from '../apps/reader/main'
 import type { Source } from '../apps/reader/main'
 import rss from '../apps/reader/public/samples/rss.xml?raw'
@@ -27,7 +27,7 @@ describe('parseFeed', () => {
       'Album Of The Week',
     ])
     expect(entries[0]).toMatchObject({
-      key: 'https://example.com/?p=2001',
+      key: 'rss https://example.com/?p=2001',
       author: 'Alex Writer',
       summary: 'The band will play twelve cities this fall.',
       read: false,
@@ -67,9 +67,55 @@ describe('parseFeed', () => {
     expect(first!.element.getAttribute('read')).toBe('true')
     expect(counts).toEqual([3, 2])
     expect(collectState([feed])).toEqual({
-      read: ['https://example.com/?p=2001'],
-      starred: ['https://example.com/?p=2002'],
+      read: ['rss https://example.com/?p=2001'],
+      starred: ['rss https://example.com/?p=2002'],
     })
+  })
+
+  it('keys entries per feed, with a fallback for entries without an id', () => {
+    const item = (guid: string, title: string) =>
+      `<item><title>${title}</title>${guid ? `<guid>${guid}</guid>` : ''}<pubDate>Mon, 14 Sep 2026 09:30:00 +0000</pubDate></item>`
+    const text = (...items: string[]) =>
+      `<rss><channel><title>t</title>${items.join('')}</channel></rss>`
+    const a = parseFeed('a', text(item('1', 'A1'), item('', 'A-noid')))
+    const b = parseFeed('b', text(item('1', 'B1'), item('', 'B-noid')))
+    const keys = [...a.entries.get(), ...b.entries.get()].map((entry) => entry.key)
+
+    expect(new Set(keys).size).toBe(4)
+    a.entries.get()[0]!.read = true
+    expect(collectState([a, b]).read).toEqual(['a 1'])
+  })
+
+  it('follows Atom rules for links, text constructs, and authors', () => {
+    const feed = parseFeed(
+      'atom',
+      `<feed xmlns="http://www.w3.org/2005/Atom"><title>f</title><author><name>Feed Author</name></author>
+        <entry><id>e1</id><title>one</title><updated>2026-09-14T00:00:00Z</updated>
+          <link rel="enclosure" href="https://x.example/a.mp3"/><link href="https://x.example/post"/>
+          <summary type="text">&lt;b&gt; is literal</summary></entry>
+        <entry><id>e2</id><title>two</title><updated>2026-09-13T00:00:00Z</updated>
+          <author><name>Own Author</name></author>
+          <content type="html">&lt;p&gt;Body&lt;/p&gt;&lt;script&gt;window.__pwned = 1&lt;/script&gt;</content></entry>
+      </feed>`,
+    )
+    const [one, two] = feed.entries.get()
+
+    expect(one).toMatchObject({
+      link: 'https://x.example/post',
+      author: 'Feed Author',
+      summary: '<b> is literal',
+    })
+    expect(two).toMatchObject({ author: 'Own Author', summary: 'Body' })
+  })
+
+  it('decodes feeds in the charset they declare', () => {
+    const bytes = (text: string) => Uint8Array.from(text, (char) => char.charCodeAt(0)).buffer
+    const latin1 = bytes(
+      '<?xml version="1.0" encoding="ISO-8859-1"?><rss><channel><title>caf\u00e9</title></channel></rss>',
+    )
+
+    expect(parseFeed('x', decodeFeed(latin1, null)).title).toBe('café')
+    expect(parseFeed('x', decodeFeed(latin1, 'text/xml; charset=ISO-8859-1')).title).toBe('café')
   })
 
   it('rejects documents that are not feeds', () => {
@@ -126,13 +172,63 @@ describe('the reader UI', () => {
 
     expect(root().querySelector('[data-total]')!.textContent).toBe('4 unread')
     expect(root().querySelector('.entry')!.classList.contains('read')).toBe(true)
-    expect(JSON.parse(store.get('e5x-reader:state')!).read).toEqual(['https://example.com/?p=2001'])
+    expect(JSON.parse(store.get('e5x-reader:state')!).read).toEqual([
+      'rss https://example.com/?p=2001',
+    ])
 
     document.body.innerHTML = '<div id="app"></div>'
     await mount(root(), options)
     await flush()
     expect(titles()).not.toContain('Band Announces Tour & New Album')
     expect(root().querySelector('[data-total]')!.textContent).toBe('4 unread')
+  })
+
+  it('keeps a read entry in the Unread list until the filter is picked again', async () => {
+    await mount(root(), options)
+    await flush()
+    click('.entry [data-read]')
+    await flush()
+    expect(titles()).toHaveLength(5)
+
+    click('[data-filter="unread"]')
+    await flush()
+    expect(titles()).toHaveLength(4)
+  })
+
+  it('refreshes without losing state or leaving the old documents live', async () => {
+    let text = rss
+    const saves: string[] = []
+    const reader = await mount(root(), {
+      ...options,
+      sources: async () => [sources[0]!],
+      fetchText: async () => text,
+      storage: {
+        getItem: storage.getItem,
+        setItem: (key, value) => (saves.push(value), storage.setItem(key, value)),
+      },
+    })
+    await flush()
+    click('.entry [data-read]') // "Band Announces Tour" (p=2001)
+    await flush()
+    const oldToggle = root().querySelector<HTMLElement>('.entry:nth-child(2) [data-star]')!
+
+    // The next fetch no longer has p=2001.
+    text = rss.replace(/<item>\s*<title>Band Announces[\s\S]*?<\/item>/, '')
+    await reader.refresh()
+    await flush()
+    const savesAfterRefresh = saves.length
+
+    oldToggle.click()
+    await flush()
+    expect(saves).toHaveLength(savesAfterRefresh)
+    expect(root().querySelector('.entry.starred')).toBeNull()
+
+    click('[data-filter="all"]')
+    click('.entry [data-star]')
+    await flush()
+    const state = JSON.parse(store.get('e5x-reader:state')!)
+    expect(state.read).toEqual(['rss https://example.com/?p=2001'])
+    expect(state.starred).toEqual(['rss https://example.com/?p=2002'])
   })
 
   it('filters by starred and by feed', async () => {

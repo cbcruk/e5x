@@ -24,10 +24,23 @@ when the document's default namespace is empty.
 RSS items and Atom entries hold the same information in different places: `link` text vs
 `<link href rel>`, `pubDate` vs `published`/`updated`, `dc:creator` vs `<author><name>`. Each
 format gets a schema, and an adapter object with getters (`rssEntry`, `atomEntryOf`) maps both to
-one `Entry`. About 80 lines, which is most of `feed.ts`.
+one `Entry`. That is most of `feed.ts`, and the review showed the adapters need format rules the
+schema cannot hold:
+
+- a `<link>` without `rel` is `alternate` (RFC 4287), so links are a function, not `$where`;
+- an entry without `<author>` inherits the feed's;
+- a summary may be missing, with the text in `<content>`;
+- entries need a key unique across feeds, with a fallback when there is no id.
 
 Related: #9 (heterogeneous children) covers different children under one name, not this. A
-schema that says "this field, or that path" would remove the adapters.
+schema that says "this field, or that path" would remove some of the adapter code.
+
+### 2b. An element with both attributes and text is not a leaf — workaround
+
+An Atom text construct is `<summary type="html">…</summary>`: the `type` attribute decides how to
+read the text. A `'<string>'` leaf reads only the text, and a child collection
+(`summary: [{ type: 'string' }]`) reads only the attributes. The adapter takes both from
+`summary[0].$el`.
 
 ### 3. No concatenation of collections — workaround
 
@@ -35,13 +48,22 @@ The reading list spans several feeds, and each feed is its own document. There i
 collections into one live collection, so the list is a `computed` over each feed's entries: a
 plain array, without `$where` / `$sort` / columns. Filtering and sorting are ordinary array code.
 
-### 4. Reading state is not a dep of the combined list — papercut (turned out fine)
+For feeds of one format there is a way out: move every feed's items under one element and wrap
+that. It does not help here, because RSS and Atom entries have different shapes (entry 2).
 
-The combined list is a `computed` over the filter, the selected feed, and each feed's entries.
-Marking an entry read changes an attribute in a feed document, which is in none of those deps, so
-the Unread list does not drop the entry until the filter or membership changes. That is what a
-reader wants: an entry does not vanish while you look at it. Getting the other behaviour would
-need one dep per entry.
+### 4. The reading list is a snapshot — decision
+
+The combined list is a `computed` over the filter, the selected feed, a `revision` counter, and
+each feed's entries. Marking an entry read changes an attribute in a feed document, which is in
+none of those deps, so the entry stays in the Unread list until you pick a filter or feed again or
+refresh. That is deliberate: an entry should not vanish while you look at it.
+
+The other behaviour is cheap: one more dep per feed, the document element atom
+`wrap(documentElement)`, which emits on any change in its tree. (The first version of this entry
+claimed it would need one dep per entry. The review showed that was wrong.)
+
+Picking the filter that is already selected does not change its value, so it did not re-filter
+at first. The `revision` attribute, bumped on every click, is the dep that makes "pick again" work.
 
 ### 5. Coarse element atoms made persistence easy — good
 
@@ -51,9 +73,15 @@ fires on any change in the tree, and the handler writes `localStorage`. Per-entr
 
 ### 6. Real feed text needs a real parser — papercut (tooling)
 
-happy-dom's `DOMParser` loses the `channel` element, `dc:creator`, and CDATA text of the real
-Stereogum feed, so reader tests run only in Chromium. Not an e5x problem, but it means the fast
+happy-dom's `DOMParser` parses feed XML as HTML. On the real Stereogum feed it loses the `channel`
+element, `dc:creator`, and CDATA text. On the synthetic sample `channel` survives, but `<link>`
+text, `dc:creator`, and CDATA are still lost. So reader tests run only in Chromium, and the fast
 test run cannot cover the reader.
+
+### 6b. `Response.text()` is always UTF-8 — papercut (platform)
+
+Feeds declare their charset in the response header or the XML declaration. `fetch().text()`
+ignores both, so the reader reads bytes and decodes them itself (`decodeFeed`). Not e5x.
 
 ### 7. Refresh replaces whole documents — papercut
 

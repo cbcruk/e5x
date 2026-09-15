@@ -604,7 +604,12 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   `pnpm reader` = Vite dev 서버 + `/api/feed` 프록시(구독 목록에 있는 URL만, 열린 프록시 방지). 링크는 http(s)만 href.
 - 테스트 `test/reader.test.ts`는 **Chromium 전용**: happy-dom `DOMParser`가 실제 피드의 `channel`·`dc:creator`·CDATA를 잃음.
 - 마찰 기록은 `apps/reader/FRICTION.md`. 첫 빌드에서 나온 것: `atom:link`가 `link`를 가림(namespace 무시), 두 포맷
-  어댑터, 문서 간 collection 합치기 없음, 새로고침 시 문서 통째 교체. 좋았던 것: element atom으로 영속화, CDATA·`dc:` 읽기.
+  어댑터(Atom 규칙: rel 없는 link = alternate, author 상속, content fallback), attribute와 text를 함께 가진 요소는
+  leaf로 못 읽음, 문서 간 collection 합치기 없음, 새로고침 시 문서 통째 교체. 좋았던 것: element atom으로 영속화,
+  CDATA·`dc:` 읽기.
+- 리뷰 1회차에서 고친 것: 읽음 키에 피드 URL 포함(guid 충돌), 프록시가 upstream content-type을 믿지 않음
+  (`application/xml` + `nosniff` + `sandbox` CSP, 바이트 전달 후 브라우저에서 charset 디코딩), 목록은 의도적 스냅숏이고
+  같은 필터 재클릭은 `revision` attribute dep으로 재필터. FRICTION 4의 "entry마다 dep 필요"는 틀린 주장이었음(피드당 1개).
 - #5는 이 앱을 **실제로 사용한 뒤** 기록을 요약해 닫는다(첫 PR은 `Part of #5`).
 
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (2026-09 채택)

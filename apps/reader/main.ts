@@ -34,7 +34,7 @@ const shell = `
     <aside><ul class="feeds" data-feeds></ul></aside>
     <main><p class="status" data-status></p><ol class="entries" data-entries></ol></main>
   </div>
-  <view filter="unread" feed="" hidden></view>
+  <view filter="unread" feed="" revision="0" hidden></view>
 `
 
 function required<T extends Element>(root: ParentNode, selector: string): T {
@@ -75,7 +75,16 @@ export async function mount(
   root.innerHTML = shell
   const storage = options.storage ?? localStorage
   // UI state lives in the DOM too, so views can take it as deps (see the sales demo).
-  const view = wrap(required(root, 'view'), { filter: 'string', feed: 'string' } as const)
+  const view = wrap(required(root, 'view'), {
+    filter: 'string',
+    feed: 'string',
+    revision: 'number',
+  } as const)
+  // Clicking a filter or a feed always re-filters, even when it is already selected.
+  const select = (change: () => void): void => {
+    change()
+    view.revision += 1
+  }
   const feedList = required(root, '[data-feeds]')
   const entryList = required(root, '[data-entries]')
   const status = required(root, '[data-status]')
@@ -86,7 +95,7 @@ export async function mount(
   let feeds: Feed[] = []
 
   for (const button of root.querySelectorAll<HTMLButtonElement>('[data-filter]')) {
-    button.addEventListener('click', () => (view.filter = button.dataset.filter!))
+    button.addEventListener('click', () => select(() => (view.filter = button.dataset.filter!)))
   }
   view.$.filter.subscribe((filter) => {
     for (const button of root.querySelectorAll<HTMLButtonElement>('[data-filter]')) {
@@ -174,7 +183,7 @@ export async function mount(
       feedList.append(li)
     }
     for (const button of feedList.querySelectorAll<HTMLButtonElement>('[data-feed]')) {
-      button.addEventListener('click', () => (view.feed = button.dataset.feed!))
+      button.addEventListener('click', () => select(() => (view.feed = button.dataset.feed!)))
     }
 
     // FRICTION 3: there is no way to concatenate collections from several documents, so the river
@@ -190,12 +199,12 @@ export async function mount(
       }),
     )
 
-    // FRICTION 4: read/starred flips are not in any dep here (they live in other trees), so the
-    // list only refilters when the filter, the feed, or membership changes. That happens to be the
-    // behaviour a reader wants: an entry you just read stays in the Unread list until you switch.
+    // FRICTION 4: the list is a snapshot on purpose. Reading an entry does not drop it from the
+    // Unread list until you pick a filter or feed again (or refresh). Re-filtering on every read
+    // change would take one more dep per feed, `wrap(documentElement)`.
     const visible = computed(
-      [view.$.filter, view.$.feed, ...feeds.map((feed) => feed.entries)],
-      (filter, feedUrl, ...lists) =>
+      [view.$.filter, view.$.feed, view.$.revision, ...feeds.map((feed) => feed.entries)],
+      (filter, feedUrl, _revision, ...lists) =>
         lists
           .flat()
           .filter((entry) => !feedUrl || entry.feed.url === feedUrl)
