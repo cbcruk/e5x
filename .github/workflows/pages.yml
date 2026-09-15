@@ -1,9 +1,14 @@
 name: Deploy demo to GitHub Pages
 
+# Deploys only after CI passes on main (a push, or a manual CI run), so a failing check always
+# blocks the deploy. There is no manual trigger here on purpose: it would skip the checks. The
+# demo is rebuilt from the same commit rather than passed over from CI, which keeps this
+# workflow free of cross-run artifact permissions; the build is deterministic.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,18 +19,19 @@ concurrency:
 
 jobs:
   build:
+    # `event` excludes pull_request runs: `branches: [main]` matches a fork's branch named main.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # Installs vp (version from the pnpm catalog), Node, and runs `vp install`.
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: voidzero-dev/setup-vp@v1.20.0
         with:
           node-version: '24'
           cache: true
-      - run: vp check
-      - run: vp run typecheck
-      - run: vp run docs:check
-      - run: vp run test
       - run: vp run build:demo
       - uses: actions/upload-pages-artifact@v5
         with:
