@@ -9,3 +9,6 @@ demo-dist
 # Vitest browser mode failure screenshots
 test/__screenshots__
 .vitest-attachments
+
+# Personal Claude Code settings
+.claude/settings.local.json
