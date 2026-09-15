@@ -118,6 +118,28 @@ const stock = computed([view.price, view.quantity], (prices, qty) =>
 collections appear as themselves. `computed` takes any get/subscribe atoms and emits once for
 changes that land in the same tick.
 
+### Lifecycle
+
+**You unsubscribe; everything else is collected on its own.**
+
+- `subscribe` returns a stop function. Until you call it, the listener, the atom, and the
+  node it watches stay alive, even if the node has left the document. Stopping a view also
+  stops the subscriptions to its deps, and stopping a `computed` stops its sources.
+- Wrapped elements, collections, columns, and views are cached for path identity
+  (`sales.item === sales.item`), but only weakly. Once an element is gone and nothing holds its
+  proxy, both are collected. A view you no longer hold (`$where({...})`, `$sort(field)`,
+  `$deep(name)`) is collected too, and its cache entry goes with it. A function predicate's
+  view lives as long as the function does.
+- e5x never disconnects its `MutationObserver`, and it doesn't need to: in a browser,
+  observing a node does not keep it alive.
+- Cached results are released once a mutation under the view is delivered, and dep values are
+  remembered weakly. A view you hold but never read again keeps no removed elements alive,
+  whether they left the view itself or a collection passed to it as a dep.
+
+Verified with garbage-collection tests in Chromium (`test/lifecycle.test.ts`). happy-dom's
+`MutationObserver` keeps observed nodes alive until `disconnect()`, so under happy-dom, detached
+trees you have read through e5x stay in memory.
+
 ## Sort & filter
 
 ```ts

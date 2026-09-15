@@ -10,6 +10,20 @@ const versions = new WeakMap<Node, number>()
 // nodes it actually bumped instead of every subscriber on the page.
 const listenersByNode = new Map<Node, Set<Listener>>()
 const dirty = new Set<Node>()
+// Cached values per observed node, released when a mutation bumps the node's version. A bump
+// invalidates them anyway; releasing them at once means a view nobody reads again does not keep
+// removed elements alive. The registry holds cells weakly: only the memo that owns a cell keeps
+// it, so a dropped view's result goes with the view even if no mutation ever comes.
+const cellsByNode = new WeakMap<Node, Set<WeakRef<Cell<unknown>>>>()
+// Removes the registry entry of a collected cell, so views created and dropped between
+// mutations do not pile up dead refs. The held value names the node weakly: a registry keeps
+// held values alive, and a strong node would keep the node's proxy, its memos, and so the cell.
+const cellRegistry = new FinalizationRegistry<{ node: WeakRef<Node>; ref: WeakRef<Cell<unknown>> }>(
+  ({ node, ref }) => {
+    const target = node.deref()
+    if (target) cellsByNode.get(target)?.delete(ref)
+  },
+)
 let observer: MutationObserver | null = null
 let notifyScheduled = false
 
@@ -39,6 +53,14 @@ function ingest(records: MutationRecord[]): void {
       const version = versions.get(node)
       if (version !== undefined) {
         versions.set(node, version + 1)
+        const cells = cellsByNode.get(node)
+        if (cells) {
+          for (const ref of cells) {
+            const cell = ref.deref()
+            if (cell) release(cell)
+          }
+          cellsByNode.delete(node)
+        }
         if (listenersByNode.has(node)) {
           dirty.add(node)
         }
@@ -77,6 +99,77 @@ function version(node: Node): number {
 }
 
 /**
+ * A value cached until the next mutation under the node it is held for.
+ *
+ * @template T The cached value.
+ */
+export interface Cell<T> {
+  /** The cached value, or `undefined` once released. */
+  value: T | undefined
+  /** The node version the value was computed at, or `-1` when there is no value. */
+  version: number
+  /** The deps' values the value was computed with, objects held weakly. */
+  deps: unknown[]
+  /** The weak reference the per-node registry holds, created on the cell's first registration. */
+  ref: WeakRef<Cell<T>> | null
+}
+
+/** Creates an empty {@linkcode Cell}. */
+export function cell<T>(): Cell<T> {
+  return { value: undefined, version: -1, deps: [], ref: null }
+}
+
+function release(cell: Cell<unknown>): void {
+  cell.value = undefined
+  cell.version = -1
+  cell.deps = []
+}
+
+/**
+ * Releases `cell` at the next mutation under `node`.
+ *
+ * Call it after each computation that fills the cell; a released cell must be registered again.
+ */
+export function holdUntilMutation(node: Node, cell: Cell<unknown>): void {
+  if (!cell.ref) {
+    cell.ref = new WeakRef(cell)
+    cellRegistry.register(cell, { node: new WeakRef(node), ref: cell.ref })
+  }
+  let cells = cellsByNode.get(node)
+  if (!cells) {
+    cells = new Set()
+    cellsByNode.set(node, cells)
+  }
+  cells.add(cell.ref)
+}
+
+/** Counts the cells registered for release at the next mutation under `node`, collected ones included; for tests. */
+export function heldCellCount(node: Node): number {
+  return cellsByNode.get(node)?.size ?? 0
+}
+
+// Dep values are remembered only to compare with `Object.is`. An object is held weakly: once it
+// is collected, no current value can be the same object, so the comparison must fail — even
+// against `undefined`, which is what a collected ref dereferences to.
+class Weak {
+  constructor(readonly ref: WeakRef<object>) {}
+}
+
+function remember(value: unknown): unknown {
+  return (typeof value === 'object' && value !== null) || typeof value === 'function'
+    ? new Weak(new WeakRef(value))
+    : value
+}
+
+function same(remembered: unknown, value: unknown): boolean {
+  if (remembered instanceof Weak) {
+    const target = remembered.ref.deref()
+    return target !== undefined && target === value
+  }
+  return Object.is(remembered, value)
+}
+
+/**
  * What a derived value depends on besides its node's subtree, plus the development checks to run when it serves a cached result.
  *
  * Both flow down a path to everything derived from it.
@@ -98,22 +191,32 @@ export const NO_INPUTS: Inputs = { deps: [], checks: [] }
  * `Object.is`-equal value. Deps are pulled on read, so a held view is correct without anyone
  * subscribing. Pending mutation records are taken first, so a read right after a synchronous
  * write is never stale. On a cache hit the inputs' checks run.
+ *
+ * The cached value is released at the next mutation under `node`, and object dep values are
+ * remembered weakly, so a memo nobody reads again keeps neither removed elements nor old dep
+ * values alive.
  */
 export function memo<T>(node: Node, compute: () => T, inputs: Inputs = NO_INPUTS): () => T {
-  let cachedVersion = -1
-  let cachedDeps: unknown[] = []
-  let cached: T
+  const cached = cell<T>()
   return () => {
     const current = version(node)
     const values = inputs.deps.map((dep) => dep.get())
-    if (current !== cachedVersion || values.some((value, i) => !Object.is(value, cachedDeps[i]))) {
-      cached = compute()
-      cachedVersion = current
-      cachedDeps = values
-    } else {
-      for (const check of inputs.checks) check()
+    if (
+      current !== cached.version ||
+      values.length !== cached.deps.length ||
+      values.some((value, i) => !same(cached.deps[i], value))
+    ) {
+      const value = compute()
+      cached.value = value
+      cached.version = current
+      cached.deps = values.map(remember)
+      holdUntilMutation(node, cached)
+      return value
     }
-    return cached
+    // Read first: a check reruns a user function, which could write and release this cell.
+    const hit = cached.value as T
+    for (const check of inputs.checks) check()
+    return hit
   }
 }
 

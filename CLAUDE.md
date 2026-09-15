@@ -336,7 +336,8 @@ Column이 아니라 Collection을 반환했다(타입은 Column). 이제 schema�
 의미였고, pull read만 우연히 매번 재계산했을 뿐.
 
 비용: gzip 2.37 → 2.95kB. 캐시된 collection이 마지막 결과 배열(제거된 element 포함 가능)을
-다음 읽기까지 붙잡는다. 읽은 모든 root가 observe 대상이 되어 mutation마다 O(depth) 조상 순회.
+다음 읽기까지 붙잡는다(#2에서 수정: mutation 시 해제). 읽은 모든 root가 observe 대상이 되어 mutation마다
+O(depth) 조상 순회.
 
 ## Phase 8: 구독 간 계산 공유 + fan-out 인덱싱 — **완료** (`pnpm test` 49/49)
 
@@ -495,6 +496,35 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 - 코어 동작(MO 전달, `takeRecords()`, `characterData`, detached/shadow root 관찰)은 Chromium과 happy-dom이
   같은 결과를 냈다.
 
+## 메모리·구독 수명 (2026-09, #2) — `test/lifecycle.test.ts`
+
+- GC 테스트는 **Chromium 전용**(`--js-flags=--expose-gc`). 이슈 제안은 Node `--expose-gc`였지만 happy-dom의
+  `MutationObserver`는 `disconnect()` 전까지 관찰 대상 노드를 강하게 잡는다(`#listeners`에 target 보관). 그래서
+  happy-dom에서는 제거된 원소나 detached 트리가 회수되지 않는다. 브라우저에서는 관찰이 노드를 살려두지 않는다.
+- 각 시나리오는 별도 함수 안에서 객체를 만들고 `WeakRef`만 돌려준다. "살아 있어야 하는" 대조군(구독 중)으로
+  하네스가 retention을 볼 수 있음을 함께 확인한다. 누수를 일부러 넣어 테스트가 잡는지도 확인했다: dep 구독 미해제,
+  listener 미삭제, 강한 캐시, registry 미삭제.
+- 확인된 계약: 구독 해제는 호출자 책임. 해제하면 listener·dep 구독·`computed` 소스까지 풀린다. proxy·collection·
+  뷰 캐시는 약하게 잡혀 원소나 뷰와 함께 회수된다. `weakCache`는 테스트용 `size`를 노출한다(내부 인터페이스).
+- **observer disconnect 안 함 (결정)**: 구독자가 없어도 held 뷰의 pull 읽기가 version에 의존하고, 브라우저에서
+  관찰은 메모리를 붙잡지 않는다. 남는 비용은 관찰 중인 트리의 mutation마다 도는 `ingest` CPU뿐이다.
+- **제거된 원소 retention 수정 (사용자 결정, 처음엔 문서화로 제안했음)**: memo가 마지막 결과 배열과 dep 값을 다음
+  읽기까지 들고 있어서, 구독 없이 붙잡힌 뷰가 제거된 원소를 살려뒀다. collection을 dep으로 준 뷰는 dep만 다시 읽어서는
+  풀리지 않았다(리뷰어가 찾음).
+  - 결과는 `Cell`(plain object)에 담아 노드별 `cellsByNode`에 등록하고, `ingest`가 그 노드 version을 올릴 때 비운다.
+    closure가 아니라 plain object인 이유: V8 closure는 바깥 스코프 전체를 잡는다.
+  - **등록부는 cell을 `WeakRef`로 잡는다.** 처음 구현(강한 `Set<Cell>`)은 mutation이 드문 트리에서 버려진 뷰의 결과를
+    끝없이 붙잡았다(리뷰어 측정: inline `$where(fn, [store])` 2000개에 heap +54.7MB, main +4.9MB). 죽은 ref는
+    `FinalizationRegistry`가 치운다. held value의 노드도 `WeakRef`여야 한다: registry는 held value를 GC root로
+    잡으므로, 노드를 강하게 두면 노드 → proxy → memo → cell 순환이 영원히 회수되지 않는다(테스트 2개가 잡음).
+  - dep 값은 `Object.is` 비교용이라 객체면 `WeakRef`로 기억한다. 회수된 ref는 **어떤 값과도 같지 않다**:
+    `deref()`가 `undefined`라 `=== value`로 비교하면, 객체에서 `undefined`로 바뀐 dep을 "같음"으로 봐서 뷰가 낡은
+    결과를 준다(리뷰어가 찾음).
+  - 캐시 적중 경로는 check 실행 전에 값을 지역 변수로 읽는다(부작용 있는 predicate가 cell을 비울 수 있음).
+  - dev stale check의 `last`도 같은 cell로 바꿈(안 그러면 dev에서만 잡고 있음).
+  - 테스트용 내부 export: `heldCellCount(node)`, `weakCache().size`.
+  - 비용: gzip 4.67 → 4.99kB. 쓰기+읽기 루프 벤치(2000행, 뷰 20개)에서 Chromium 차이는 노이즈 범위.
+
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (실험, 2026-09~)
 
 ```
@@ -528,10 +558,11 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 
 리뷰어를 계속 쓸지 #1~#4를 마친 뒤 이 표로 판단한다.
 
-| PR  | 이슈 | 지적(must-fix / suggestion) | 반영                                       | 오탐 | 리뷰 횟수 | 비고                                                                                                                                       |
-| --- | ---- | --------------------------- | ------------------------------------------ | ---- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| #14 | #13  | 1회차 1 / 4, 2회차 0 / 3    | 1회차 4 (+1 거절, 메모 추가), 2회차 3      | 0    | 2         | 리뷰어가 수동 배포의 검사 우회 회귀와, 작성자 커밋에서 빠진 CLAUDE.md 변경을 코드 대조로 찾음                                              |
-| #15 | #1   | 0 / 3                       | 2 (1은 머지 전 확인 절차라 반영 대상 아님) | 0    | 1         | 리뷰어가 임시 복사본에서 프로브를 돌려 production 테스트 분리 이유의 누락(`NODE_ENV` 변환 치환)을 찾음. 수정이 주석·문서뿐이라 재리뷰 생략 |
+| PR  | 이슈 | 지적(must-fix / suggestion)           | 반영                                                               | 오탐 | 리뷰 횟수 | 비고                                                                                                                                                                                                                                                                                                                                    |
+| --- | ---- | ------------------------------------- | ------------------------------------------------------------------ | ---- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #14 | #13  | 1회차 1 / 4, 2회차 0 / 3              | 1회차 4 (+1 거절, 메모 추가), 2회차 3                              | 0    | 2         | 리뷰어가 수동 배포의 검사 우회 회귀와, 작성자 커밋에서 빠진 CLAUDE.md 변경을 코드 대조로 찾음                                                                                                                                                                                                                                           |
+| #15 | #1   | 0 / 3                                 | 2 (1은 머지 전 확인 절차라 반영 대상 아님)                         | 0    | 1         | 리뷰어가 임시 복사본에서 프로브를 돌려 production 테스트 분리 이유의 누락(`NODE_ENV` 변환 치환)을 찾음. 수정이 주석·문서뿐이라 재리뷰 생략                                                                                                                                                                                              |
+| #16 | #2   | 1회차 0 / 4, 2회차 3 / 2, 3회차 0 / 2 | 1회차 3 (+1은 사용자 확인 → 수정 결정), 2회차 5, 3회차 1 (+1 거절) | 0    | 3         | 1회차: 누수 6가지를 더 넣어 검출력 확인, `cachedDeps` retention 재현. 2회차: 수정 코드의 회귀 2개(회수된 dep ref가 `undefined`와 같음, 강한 cell 등록부의 무한 retention)를 Chromium 프로브와 heap 측정으로 잡음. 둘 다 기존 테스트를 통과하던 버그. 3회차: 수정 확인(heap 차이가 뷰 수와 무관하게 약 0.35MB), CLAUDE.md 낡은 기록 지적 |
 
 ## 알려진 약점 (정직하게)
 
@@ -541,7 +572,7 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 - 필드 이름 `get`/`subscribe`는 schema에서 금지, loose 모드에선 collection 레벨 열로 접근 불가
   (atom 프로토콜과 맞바꾼 비용).
 - inline arrow predicate/comparator는 매번 새 함수라 뷰 공유 불가 — 공유하려면 함수를 끌어올릴 것.
-- 크기: sub-kB 미학에서 멀어지는 중 (gzip 4.96kB). 캐시 계층 + Phase 10 API + dev 체크.
+- 크기: sub-kB 미학에서 멀어지는 중 (gzip 4.99kB). 캐시 계층 + Phase 10 API + dev 체크 + #2 캐시 해제.
   dev 체크는 런타임 플래그라 production 번들에서도 코드는 남는다(비활성).
 - deps 누락은 dev에서만, best-effort로 탐지: proxy 밖 읽기는 상태가 바뀐 뒤 읽힐 때만, 구독만 하고
   읽지 않는 뷰는 못 잡음. 같은 틱에 계산→외부 변경→읽기도 놓침.

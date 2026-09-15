@@ -6,6 +6,8 @@
 export interface ViewCache<V extends object> {
   /** Returns the view cached under `key`, creating and caching it with `create` when absent or collected. */
   get(key: string, create: () => V): V
+  /** How many keys have an entry; an entry is removed some time after its view is garbage collected. */
+  readonly size: number
 }
 
 /**
@@ -34,6 +36,9 @@ export function weakCache<V extends object>(): ViewCache<V> {
       entries.set(key, new WeakRef(value))
       registry.register(value, key)
       return value
+    },
+    get size() {
+      return entries.size
     },
   }
 }

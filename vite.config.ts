@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite-plus'
+import { configDefaults } from 'vite-plus/test/config'
 import { playwright } from 'vite-plus/test/browser-playwright'
 import dts from 'vite-plugin-dts'
 
@@ -16,8 +17,17 @@ export default defineConfig({
   test: {
     projects: [
       // Fast default run: every suite in happy-dom.
-      { extends: true, test: { name: 'happy-dom', environment: 'happy-dom' } },
-      // The suites that exercise MutationObserver delivery, rerun in headless Chromium.
+      {
+        extends: true,
+        test: {
+          name: 'happy-dom',
+          environment: 'happy-dom',
+          // Garbage collection tests: happy-dom's MutationObserver keeps observed nodes alive.
+          exclude: [...configDefaults.exclude, 'test/lifecycle.test.ts'],
+        },
+      },
+      // Headless Chromium: the suites that exercise MutationObserver delivery (also run in
+      // happy-dom) and the garbage collection tests (Chromium only).
       // Listed by hand: add any new suite that depends on observer behaviour.
       {
         extends: true,
@@ -29,10 +39,12 @@ export default defineConfig({
             'test/wrap.test.ts',
             'test/dev.test.ts',
             'test/demo-smoke.test.ts',
+            'test/lifecycle.test.ts',
           ],
           browser: {
             enabled: true,
-            provider: playwright(),
+            // `gc()` for test/lifecycle.test.ts.
+            provider: playwright({ launchOptions: { args: ['--js-flags=--expose-gc'] } }),
             headless: true,
             instances: [{ browser: 'chromium' }],
           },

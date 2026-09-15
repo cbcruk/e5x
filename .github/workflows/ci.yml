@@ -31,8 +31,9 @@ jobs:
       - run: vp build
       - run: vp run build:demo
 
-  # The observer-driven suites again in headless Chromium: happy-dom has differed from real
-  # browsers before. A separate job so it runs alongside `check`; Pages waits for both.
+  # Headless Chromium: the observer-driven suites again (happy-dom has differed from real
+  # browsers before) and the garbage collection tests. A separate job so it runs alongside
+  # `check`; Pages waits for both.
   browser:
     runs-on: ubuntu-latest
     steps:
