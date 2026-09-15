@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vite-plus/test';
 import { h } from '../src/jsx';
 import { wrap } from '../src/index';
 

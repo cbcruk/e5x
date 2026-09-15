@@ -450,6 +450,19 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 - Vite 앱 빌드가 `process.env.NODE_ENV`를 치환해 배포본에선 dev 체크가 제거됨(번들에 `process` 0회).
 - CI 재현성을 위해 `packageManager: pnpm@11.22.0` 고정.
 
+## 툴체인: Vite+ (2026-09)
+
+- `vite-plus` 0.3.1 — `vp`가 Vite 8(Rolldown) / Vitest 4.1 / Oxlint / Oxfmt / tsdown을 묶는다.
+  `vite`는 pnpm catalog + overrides로 `@voidzero-dev/vite-plus-core`에 별칭. import는 `vite-plus`,
+  `vite-plus/test`.
+- **0.3.2가 아니라 0.3.1인 이유**: pnpm 11은 최소 릴리스 경과 시간보다 새 패키지를 설치하면
+  `minimumReleaseAgeExclude`를 **자동으로** 추가한다(비엄격 모드). 공급망 보호를 우회하지 않으려고
+  경과 시간을 넘긴 버전을 고정. 올릴 때도 exclude가 생기지 않았는지 확인할 것.
+- JSX pragma는 `esbuild` → `oxc.jsx: { runtime: 'classic', pragma, pragmaFrag }` (Vite 8).
+- 라이브러리 빌드는 아직 Vite lib mode + vite-plugin-dts. `vp pack`(tsdown) 전환은 #3에서 결정.
+- `vp check`는 tsc를 대체하지 않는다(타입 검사는 oxlint type-aware 옵션일 때만). `tsc --noEmit` 유지.
+- CI는 `voidzero-dev/setup-vp`(정확한 태그 고정 — 이동 태그 `v1`은 v1.15.0에서 동결됨).
+
 ## 알려진 약점 (정직하게)
 
 - bulk write read/write 비대칭 → typed에선 iteration 강제.

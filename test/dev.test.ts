@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vite-plus/test';
 import { wrap } from '../src/index';
 
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
@@ -14,7 +14,7 @@ function ledger() {
   return { filters, sales };
 }
 
-let warn: ReturnType<typeof vi.spyOn>;
+let warn: MockInstance<typeof console.warn>;
 const messages = (): string[] => warn.mock.calls.map((call) => String(call[0]));
 
 beforeEach(() => {
