@@ -464,6 +464,11 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 - 라이브러리 빌드는 아직 Vite lib mode + vite-plugin-dts. `vp pack`(tsdown) 전환은 #3에서 결정.
 - `vp check`는 tsc를 대체하지 않는다(타입 검사는 oxlint type-aware 옵션일 때만). `tsc --noEmit` 유지.
 - CI는 `voidzero-dev/setup-vp`(정확한 태그 고정 — 이동 태그 `v1`은 v1.15.0에서 동결됨).
+- 포맷: Oxfmt `semi: false`, `singleQuote`, `printWidth: 100` (`vite.config.ts`의 `fmt`). 일괄 포맷
+  커밋은 `.git-blame-ignore-revs`에 등록. 포맷 전후 데모 번들 해시가 동일해 동작 무변경을 확인했다.
+- 린트: `vp check`(Oxfmt + Oxlint)가 CI에서 tsc 앞에 돈다. `unicorn/no-useless-spread`는
+  `reactive.ts`의 listener 스냅숏에서 **오탐** — 그 자리만 disable. 이 규칙의 `--fix`를 무심코
+  적용하면 순회 중 구독 해제 버그가 생긴다.
 
 ## 알려진 약점 (정직하게)
 
