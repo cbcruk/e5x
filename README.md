@@ -54,6 +54,10 @@ at that empty seat, with a reactivity layer E4X never had.
 - Reads are memoized per DOM version: holding a view and indexing into it is O(1) per read
   until the subtree changes. Pending mutations are pulled synchronously, so a read right
   after a write is never stale.
+- The same path returns the same view: `rows.$where({ dept: 'eng' })` asked in two places (or
+  with keys in a different order) is one object, computed once per change for every
+  subscriber. Function predicates and comparators share by identity, so hoist them out of
+  render loops to share; an inline arrow gets a view of its own.
 
 ### Unified namespace
 
@@ -105,6 +109,9 @@ state changes:
 ```ts
 rows.$where((r) => r.amount > min);         // re-create when `min` changes — it is not tracked
 ```
+
+Object predicates are copied when the view is created, so mutating the object afterwards
+has no effect on it.
 
 Bulk write (typed) iterates wrapped elements:
 

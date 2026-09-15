@@ -1,6 +1,7 @@
 import { wrapNode } from './wrap';
 import { createColumn } from './column';
 import { derived, memo, sameElements } from './reactive';
+import { byIdentity, weakCache } from './cache';
 import { matches } from './match';
 import {
   childrenNamed,
@@ -26,6 +27,25 @@ interface CollectionConfig {
   tagName: string | null;
   descriptor: NodeDescriptor | null;
   compute: () => Element[];
+}
+
+type ObjectPredicate = Record<string, unknown>;
+type FunctionPredicate = (element: LooseWrapped) => boolean;
+type Comparator = (a: LooseWrapped, b: LooseWrapped) => number;
+
+// Equal object predicates share one view. Only primitive values have a key whose equality
+// implies equal matching; anything else gets a private view.
+function predicateKey(predicate: ObjectPredicate): string | null {
+  const entries: [string, string, string][] = [];
+  for (const [key, value] of Object.entries(predicate)) {
+    const type = typeof value;
+    if (type !== 'string' && type !== 'number' && type !== 'boolean') {
+      return null;
+    }
+    entries.push([key, type, String(value)]);
+  }
+  entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return JSON.stringify(entries);
 }
 
 function isIndex(key: string): number | null {
@@ -81,48 +101,74 @@ export function createCollection(config: CollectionConfig): LooseCollection {
     return view;
   }
 
+  // Derived views are shared: the same path asked twice returns the same memoized view, so
+  // subscribers in different places compute once per DOM version.
+  const whereByFunction = new WeakMap<FunctionPredicate, LooseCollection>();
+  const whereByObject = weakCache<LooseCollection>();
+  const sortByComparator = new WeakMap<Comparator, LooseCollection>();
+  const sortByField = weakCache<LooseCollection>();
+  const deepByName = weakCache<LooseCollection>();
+  let lengthAtom: ReadableAtom<number> | null = null;
+
+  function filtered(predicate: ObjectPredicate | FunctionPredicate): LooseCollection {
+    return createCollection({
+      root,
+      owner,
+      tagName,
+      descriptor,
+      compute: () => compute().filter((element) => matches(element, predicate, descriptor)),
+    });
+  }
+
+  function sorted(sort: () => Element[]): LooseCollection {
+    return createCollection({ root, owner, tagName, descriptor, compute: sort });
+  }
+
   const api = {
-    $where(
-      predicate: Record<string, unknown> | ((element: LooseWrapped) => boolean),
-    ): LooseCollection {
-      return createCollection({
-        root,
-        owner,
-        tagName,
-        descriptor,
-        compute: () => compute().filter((element) => matches(element, predicate, descriptor)),
-      });
+    $where(predicate: ObjectPredicate | FunctionPredicate): LooseCollection {
+      if (typeof predicate === 'function') {
+        return byIdentity(whereByFunction, predicate, () => filtered(predicate));
+      }
+      // Snapshot, so mutating the caller's object cannot change a view shared under its old key.
+      const snapshot = { ...predicate };
+      const key = predicateKey(snapshot);
+      return key === null
+        ? filtered(snapshot)
+        : whereByObject.get(key, () => filtered(snapshot));
     },
-    $sort(
-      field: string | ((a: LooseWrapped, b: LooseWrapped) => number),
-      direction: SortDirection = 'asc',
-    ): LooseCollection {
-      const sorted =
-        typeof field === 'function'
-          ? (): Element[] =>
-              [...compute()].sort((a, b) => field(wrapNode(a, descriptor), wrapNode(b, descriptor)))
-          : (): Element[] => {
-              // Read each key once instead of on every comparison.
-              const type = leafType(field);
-              const sign = direction === 'desc' ? -1 : 1;
-              const keyed = compute().map((element) => ({
-                element,
-                key: fromDom(readRaw(element, field), type),
-              }));
-              keyed.sort((a, b) => (a.key < b.key ? -sign : a.key > b.key ? sign : 0));
-              return keyed.map((entry) => entry.element);
-            };
-      return createCollection({ root, owner, tagName, descriptor, compute: sorted });
+    $sort(field: string | Comparator, direction: SortDirection = 'asc'): LooseCollection {
+      if (typeof field === 'function') {
+        return byIdentity(sortByComparator, field, () =>
+          sorted(() =>
+            [...compute()].sort((a, b) => field(wrapNode(a, descriptor), wrapNode(b, descriptor))),
+          ),
+        );
+      }
+      return sortByField.get(JSON.stringify([field, direction]), () =>
+        sorted(() => {
+          // Read each key once instead of on every comparison.
+          const type = leafType(field);
+          const sign = direction === 'desc' ? -1 : 1;
+          const keyed = compute().map((element) => ({
+            element,
+            key: fromDom(readRaw(element, field), type),
+          }));
+          keyed.sort((a, b) => (a.key < b.key ? -sign : a.key > b.key ? sign : 0));
+          return keyed.map((entry) => entry.element);
+        }),
+      );
     },
     $deep(name: string): LooseCollection {
-      return createCollection({
-        root,
-        owner: null,
-        tagName: name,
-        descriptor: null,
-        compute: () =>
-          compute().flatMap((element) => Array.from(element.querySelectorAll(name))),
-      });
+      return deepByName.get(name, () =>
+        createCollection({
+          root,
+          owner: null,
+          tagName: name,
+          descriptor: null,
+          compute: () =>
+            compute().flatMap((element) => Array.from(element.querySelectorAll(name))),
+        }),
+      );
     },
     $push(data: Record<string, unknown>): LooseWrapped {
       if (!owner || !tagName) {
@@ -144,7 +190,8 @@ export function createCollection(config: CollectionConfig): LooseCollection {
       });
     },
     get $length(): ReadableAtom<number> {
-      return derived(root, () => compute().length);
+      lengthAtom ??= derived(root, () => compute().length);
+      return lengthAtom;
     },
     [Symbol.iterator](): Iterator<LooseWrapped> {
       return compute()

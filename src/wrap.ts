@@ -1,4 +1,5 @@
 import { createCollection } from './collection';
+import { weakCache } from './cache';
 import {
   assertValidDescriptor,
   childrenNamed,
@@ -69,7 +70,7 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
 
   // Stable per element + name, so repeated path reads reuse one memoized collection.
   const children = new Map<string, LooseCollection>();
-  const deep = new Map<string, LooseCollection>();
+  const deep = weakCache<LooseCollection>();
   const childrenOf = (name: string, child: NodeDescriptor | null): LooseCollection => {
     let collection = children.get(name);
     if (!collection) {
@@ -94,14 +95,7 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
         return attributeView(target);
       }
       if (key === '$deep') {
-        return (name: string): LooseCollection => {
-          let collection = deep.get(name);
-          if (!collection) {
-            collection = descendants(target, name);
-            deep.set(name, collection);
-          }
-          return collection;
-        };
+        return (name: string): LooseCollection => deep.get(name, () => descendants(target, name));
       }
       if (typeof key === 'symbol') {
         return Reflect.get(target, key);

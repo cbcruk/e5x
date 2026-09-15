@@ -99,3 +99,59 @@ describe('fields stored as child text', () => {
     expect(sales.item.note.$sum).toBeUndefined();
   });
 });
+
+describe('the same path shares one view', () => {
+  it('shares equal object predicates regardless of key order', () => {
+    const data = table();
+    expect(data.row.$where({ name: 'r1', amount: 2 })).toBe(data.row.$where({ amount: 2, name: 'r1' }));
+  });
+
+  it('keeps predicates with different matching apart', () => {
+    document.body.innerHTML = `<rows><row active="true"></row></rows>`;
+    const loose = wrap(document.body.firstElementChild!);
+    expect(loose.row.$where({ active: true })).not.toBe(loose.row.$where({ active: 'true' }));
+    expect(loose.row.$where({ tag: {} })).not.toBe(loose.row.$where({ tag: {} }));
+  });
+
+  it('snapshots the predicate object so later mutation cannot corrupt the shared view', () => {
+    const data = table();
+    const predicate = { name: 'r1' };
+    const view = data.row.$where(predicate);
+    predicate.name = 'r2';
+    expect(view.name.get()).toEqual(['r1']);
+    expect(data.row.$where({ name: 'r2' }).name.get()).toEqual(['r2']);
+  });
+
+  it('shares by function identity and by sort field + direction', () => {
+    const data = table();
+    const positive = (r: { amount: number }): boolean => r.amount > 0;
+    expect(data.row.$where(positive)).toBe(data.row.$where(positive));
+    expect(data.row.$sort('amount', 'desc')).toBe(data.row.$sort('amount', 'desc'));
+    expect(data.row.$sort('amount', 'desc')).not.toBe(data.row.$sort('amount'));
+    expect(data.row.amount.$sum).toBe(data.row.amount.$sum);
+  });
+
+  it('computes once per write for subscribers in different places', async () => {
+    const data = table(10);
+    let calls = 0;
+    const positive = (r: { amount: number }): boolean => {
+      calls += 1;
+      return r.amount > 0;
+    };
+    const stops = Array.from({ length: 5 }, () =>
+      data.row.$where(positive).amount.$sum.subscribe(() => {}),
+    );
+
+    calls = 0;
+    data.row[0]!.amount = 100;
+    await flush();
+    expect(calls).toBe(10);
+    stops.forEach((stop) => stop());
+  });
+
+  it('still hands each caller its own array', () => {
+    const data = table();
+    const values = data.row.amount.$values;
+    expect(values.get()).not.toBe(values.get());
+  });
+});

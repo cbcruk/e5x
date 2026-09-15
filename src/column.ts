@@ -36,37 +36,29 @@ export function createColumn(config: ColumnConfig): Column<Leaf> {
   // The memoized array is shared by every aggregate; hand callers their own copy.
   const snapshot = (): Leaf[] => values().slice();
 
+  const sum = (): number => values().reduce<number>((acc, value) => acc + Number(value), 0);
+
+  // Scalar aggregates are shared atoms. Array-valued ones stay per-subscriber so each gets
+  // its own copy, while the underlying values memo is still computed once.
+  const valuesAtom: ReadableAtom<Leaf[]> = {
+    get: snapshot,
+    subscribe: (listener) => derived(root, snapshot, shallowEqual).subscribe(listener),
+  };
+  const aggregates = {
+    $length: derived(root, () => values().length),
+    $sum: derived(root, sum),
+    $avg: derived(root, () => (values().length === 0 ? NaN : sum() / values().length)),
+    $min: derived(root, () => extreme(values(), -1)),
+    $max: derived(root, () => extreme(values(), 1)),
+  };
+
   const api = {
     get(): Leaf[] {
       return snapshot();
     },
-    subscribe(listener: (values: Leaf[]) => void): () => void {
-      return derived(root, snapshot, shallowEqual).subscribe(listener);
-    },
-    get $values(): ReadableAtom<Leaf[]> {
-      return derived(root, snapshot, shallowEqual);
-    },
-    get $length(): ReadableAtom<number> {
-      return derived(root, () => values().length);
-    },
-    get $sum(): ReadableAtom<number> {
-      return derived(root, () => values().reduce<number>((acc, value) => acc + Number(value), 0));
-    },
-    get $avg(): ReadableAtom<number> {
-      return derived(root, () => {
-        const current = values();
-        if (current.length === 0) {
-          return NaN;
-        }
-        return current.reduce<number>((acc, value) => acc + Number(value), 0) / current.length;
-      });
-    },
-    get $min(): ReadableAtom<Leaf> {
-      return derived(root, () => extreme(values(), -1));
-    },
-    get $max(): ReadableAtom<Leaf> {
-      return derived(root, () => extreme(values(), 1));
-    },
+    subscribe: valuesAtom.subscribe,
+    $values: valuesAtom,
+    ...aggregates,
     [Symbol.iterator](): Iterator<Leaf> {
       return values()[Symbol.iterator]();
     },

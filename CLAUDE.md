@@ -332,6 +332,34 @@ Column이 아니라 Collection을 반환했다(타입은 Column). 이제 schema�
 비용: gzip 2.37 → 2.95kB. 캐시된 collection이 마지막 결과 배열(제거된 element 포함 가능)을
 다음 읽기까지 붙잡는다. 읽은 모든 root가 observe 대상이 되어 mutation마다 O(depth) 조상 순회.
 
+## Phase 8: 구독 간 계산 공유 + fan-out 인덱싱 — **완료** (`pnpm test` 49/49)
+
+측정 (happy-dom):
+
+| 시나리오 | 이전 | 이후 |
+|---|---|---|
+| 같은 predicate 함수로 뷰를 20곳에서 생성·구독 | predicate 40,000/write | 2,000/write |
+| 같은 객체 predicate 20곳, write 10회 | 125ms | 29ms |
+| disjoint 트리 1000개 구독, 한 트리에 write 200회 | 1,981ms | 292ms (상당 부분 await 오버헤드) |
+| 새 `$sort('n').get()` × 20 | 32ms | 6ms (정렬 뷰 공유) |
+| inline arrow predicate 20곳 | 40,000/write | 동일 — 원리상 공유 불가 |
+
+구조:
+
+- **같은 path = 같은 뷰**: `$where(obj)`는 정규화 키(키 정렬 + 값 타입 + 문자열)로, 함수
+  predicate/comparator는 identity(WeakMap)로, `$sort(field, dir)`와 `$deep(name)`은 문자열 키로 캐시.
+  키 동등이 매칭 동등을 보장하는 원시값(string/number/boolean)일 때만 공유 — 그 외는 전용 뷰.
+- 문자열 키 캐시는 **WeakRef + FinalizationRegistry** (`src/cache.ts`): 검색창처럼 키가 무한히
+  늘어나는 경우에도 붙잡지 않은 뷰는 GC. `--expose-gc`로 수동 확인(결정적 테스트 불가).
+- 객체 predicate는 생성 시 **snapshot** — 공유 키 아래 뷰가 호출자 객체 변경으로 오염되지 않게.
+  (의미론 변화: 이전엔 호출자가 객체를 고치면 다음 재계산에 반영됐음.)
+- 집계 atom(`$sum/$avg/$min/$max/$length`) 공유. 배열 atom(`$values`, column `subscribe`)은
+  구독자별 복사본 유지 — ④에서 `$values.get()`이 호출자 간 같은 배열을 주던 구멍도 여기서 막음.
+- **listener를 노드별로 인덱싱**: mutation이 version을 올린 노드의 구독자만 깨운다
+  (이전: 페이지의 모든 구독자 순회).
+
+비용: gzip 2.95 → 3.42kB.
+
 ## 알려진 약점 (정직하게)
 
 - bulk write read/write 비대칭 → typed에선 iteration 강제.
@@ -339,7 +367,8 @@ Column이 아니라 Collection을 반환했다(타입은 Column). 이제 schema�
 - descriptor의 child는 1-tuple만 — heterogeneous children 미지원.
 - 필드 이름 `get`/`subscribe`는 schema에서 금지, loose 모드에선 collection 레벨 열로 접근 불가
   (atom 프로토콜과 맞바꾼 비용).
-- 구독자끼리 계산 공유 없음: 같은 `$where`를 20곳에서 구독하면 20번 계산 (뷰가 독립 객체).
+- inline arrow predicate/comparator는 매번 새 함수라 뷰 공유 불가 — 공유하려면 함수를 끌어올릴 것.
+- 크기: sub-kB 미학에서 멀어지는 중 (gzip 3.42kB). 캐시 계층이 대부분.
 - typed collection의 index signature는 **writable** (결정 2026-09): TS는 `delete`만 허용하고
   대입을 막는 방법이 없다(readonly는 둘 다 막음). E4X식 `delete sales.item[0]` 대칭을 택함.
   구멍: `c[0] = otherRow`(wrapped 원소)는 타입 통과 후 런타임 TypeError. 일반 객체 대입은 타입 에러.

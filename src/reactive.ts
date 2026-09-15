@@ -2,17 +2,27 @@ import type { ReadableAtom } from './types';
 
 type Listener = () => void;
 
-const listeners = new Set<Listener>();
 // Every observed node carries a version that bumps whenever a mutation lands in its subtree.
 // Memoized reads compare versions; subscribers skip work when their node's version is unchanged.
 const versions = new WeakMap<Node, number>();
+// Listeners are indexed by the node they watch, so a mutation only wakes subscribers of the
+// nodes it actually bumped instead of every subscriber on the page.
+const listenersByNode = new Map<Node, Set<Listener>>();
+const dirty = new Set<Node>();
 let observer: MutationObserver | null = null;
 let notifyScheduled = false;
 
 function notify(): void {
   notifyScheduled = false;
-  for (const listener of [...listeners]) {
-    listener();
+  const nodes = [...dirty];
+  dirty.clear();
+  for (const node of nodes) {
+    const listeners = listenersByNode.get(node);
+    if (listeners) {
+      for (const listener of [...listeners]) {
+        listener();
+      }
+    }
   }
 }
 
@@ -26,11 +36,14 @@ function ingest(records: MutationRecord[]): void {
       const version = versions.get(node);
       if (version !== undefined) {
         versions.set(node, version + 1);
+        if (listenersByNode.has(node)) {
+          dirty.add(node);
+        }
       }
       bumped.add(node);
     }
   }
-  if (!notifyScheduled && listeners.size > 0) {
+  if (!notifyScheduled && dirty.size > 0) {
     notifyScheduled = true;
     queueMicrotask(notify);
   }
@@ -82,9 +95,18 @@ export function watch(node: Node, listener: (version: number) => void): () => vo
       listener(current);
     }
   };
+  let listeners = listenersByNode.get(node);
+  if (!listeners) {
+    listeners = new Set();
+    listenersByNode.set(node, listeners);
+  }
   listeners.add(onMutation);
   return () => {
-    listeners.delete(onMutation);
+    const current = listenersByNode.get(node);
+    current?.delete(onMutation);
+    if (current?.size === 0) {
+      listenersByNode.delete(node);
+    }
   };
 }
 
