@@ -57,7 +57,10 @@
 
       .bars { display: grid; gap: 0.5rem; }
       .bar { display: grid; grid-template-columns: 5rem 1fr 3rem; gap: 0.5rem; align-items: center; padding: 0.2rem 0.3rem; border-radius: 6px; }
-      .bar.linked { background: var(--accent-soft); }
+      button.bar { width: 100%; text-align: left; border: 1px solid transparent; background: none; }
+      .bar.selected { background: var(--accent-soft); border-color: var(--accent); }
+      pre.expr { margin: 0 0 0.75rem; padding: 0.5rem 0.75rem; background: var(--code); border-radius: 6px; overflow-x: auto; }
+      .bar .track, .bar .fill { display: block; }
       .bar .track { height: 0.6rem; background: var(--code); border-radius: 99px; overflow: hidden; }
       .bar .fill { height: 100%; background: var(--accent); width: 0; transition: width 200ms; }
       .bar .n { text-align: right; font-variant-numeric: tabular-nums; }
@@ -68,6 +71,9 @@
     </style>
   </head>
   <body>
+    <!-- UI state is DOM too: the controls write here, the view depends on it. -->
+    <filters hidden dept="" organic="false" search="" sort="type" direction="asc"></filters>
+
     <!-- The model: plain DOM, server-rendered. e5x reads and writes it in place. -->
     <sales hidden vendor="John's Market">
       <item type="carrot" dept="produce" price="3" quantity="10" organic="true"><note>Local farm</note></item>
@@ -81,9 +87,9 @@
       <header>
         <h1>
           <span id="vendorTitle"></span>
-          <small>e5x — every value on this page is a subscription to the <code>&lt;sales&gt;</code> DOM tree</small>
+          <small>e5x — every value on this page is a subscription to a DOM tree</small>
         </h1>
-        <label>vendor <code class="expr">sales.vendor = value</code><br />
+        <label>vendor <code class="expr">sales.$.vendor</code> / <code class="expr">sales.vendor = value</code><br />
           <input id="vendor" />
         </label>
       </header>
@@ -91,7 +97,10 @@
       <main class="grid">
         <section class="card wide">
           <h2>Current view</h2>
-          <p class="lede"><code class="expr" id="viewExpr"></code></p>
+          <p class="lede">One view for the page's lifetime; it recomputes when the data or its deps change.</p>
+          <pre class="expr">const view = sales.item
+  .$where(matchesFilters, [filters.$.dept, filters.$.organic, filters.$.search])
+  .$sort(bySortField, [filters.$.sort, filters.$.direction])</pre>
           <div class="stats">
             <div class="stat"><span>items</span><strong id="statCount"></strong><code>view.$length</code></div>
             <div class="stat"><span>units</span><strong id="statUnits"></strong><code>view.quantity.$sum</code></div>
@@ -104,8 +113,8 @@
 
         <section class="card wide">
           <h2>Inventory</h2>
-          <p class="lede">Rows come from <code class="expr">view.subscribe</code>; cells from
-            <code class="expr">view.price.subscribe</code> and friends. Edits write through the same path.</p>
+          <p class="lede">Rows come from <code class="expr">view.subscribe</code>; each row repaints from
+            <code class="expr">item.subscribe</code>. Controls write <code class="expr">filters.dept = …</code>.</p>
           <div class="row">
             <label>dept <select id="dept"><option value="">all</option></select></label>
             <label><input id="organic" type="checkbox" /> organic only</label>
@@ -136,14 +145,15 @@
             <input name="dept" placeholder="dept" required />
             <input name="price" type="number" step="0.01" min="0" placeholder="price" required />
             <input name="quantity" type="number" min="0" placeholder="qty" required />
+            <input name="note" placeholder="note (optional)" />
             <button>add <code>sales.item.$push({…})</code></button>
           </form>
         </section>
 
         <section class="card">
           <h2>Units by dept</h2>
-          <p class="lede"><code class="expr">sales.item.$where({ dept }).quantity.$sum</code> — the highlighted
-            bar is the <em>same view object</em> the inventory filter uses.</p>
+          <p class="lede"><code class="expr">sales.item.$where({ dept }).quantity.$sum</code> — asking the same
+            path anywhere returns the same view. Click a bar to filter.</p>
           <div class="bars" id="bars"></div>
         </section>
 
@@ -158,7 +168,8 @@
 
         <section class="card wide">
           <h2>The model, live</h2>
-          <p class="lede">Serialized <code>&lt;sales&gt;</code> tree.</p>
+          <p class="lede"><code class="expr">filters.subscribe</code> + <code class="expr">sales.subscribe</code>
+            — both trees, serialized.</p>
           <pre id="xml"></pre>
         </section>
       </main>

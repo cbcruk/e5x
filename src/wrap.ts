@@ -1,11 +1,13 @@
 import { createCollection } from './collection';
 import { weakCache } from './cache';
+import { derived, watch } from './reactive';
 import {
   assertValidDescriptor,
   childrenNamed,
   readRaw,
   fromDom,
   toDom,
+  writeField,
   isLeaf,
   isLibraryName,
   childDescriptor,
@@ -14,6 +16,7 @@ import type {
   LooseCollection,
   LooseWrapped,
   NodeDescriptor,
+  ReadableAtom,
   ValidDescriptor,
   Wrapped,
 } from './types';
@@ -80,7 +83,32 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
     return collection;
   };
 
-  const proxy = new Proxy(element, {
+  // The element as an atom: its value is the wrapped element, emitted on any subtree change.
+  const get = (): unknown => proxy;
+  const subscribe = (listener: (element: unknown) => void): (() => void) => {
+    listener(proxy);
+    return watch(element, () => listener(proxy));
+  };
+
+  // `element.$.field` mirrors the fields as atoms. A child collection is already an atom.
+  const fieldAtoms = new Map<string, ReadableAtom<unknown>>();
+  const fieldAtom = (name: string): unknown => {
+    if (childDescriptor(descriptor?.[name]) || (!descriptor?.[name] && childrenNamed(element, name).length > 0)) {
+      return proxy[name];
+    }
+    let atom = fieldAtoms.get(name);
+    if (!atom) {
+      atom = derived(element, () => proxy[name]);
+      fieldAtoms.set(name, atom);
+    }
+    return atom;
+  };
+  const mirror = new Proxy({} as Record<string, unknown>, {
+    get: (_target, key) =>
+      typeof key === 'string' && !isLibraryName(key) ? fieldAtom(key) : undefined,
+  });
+
+  const proxy: any = new Proxy(element, {
     get(target, key) {
       if (key === Symbol.toPrimitive || key === 'valueOf') {
         return () => target.textContent;
@@ -93,6 +121,15 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
       }
       if (key === '$attr') {
         return attributeView(target);
+      }
+      if (key === '$') {
+        return mirror;
+      }
+      if (key === 'get') {
+        return get;
+      }
+      if (key === 'subscribe') {
+        return subscribe;
       }
       if (key === '$deep') {
         return (name: string): LooseCollection => deep.get(name, () => descendants(target, name));
@@ -124,15 +161,10 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
       if (typeof key === 'symbol') {
         return Reflect.set(target, key, value);
       }
-      if (isLibraryName(key)) {
+      if (isLibraryName(key) || key === 'get' || key === 'subscribe') {
         return false;
       }
-      const children = childrenNamed(target, key);
-      if (children.length > 0) {
-        children[0]!.textContent = toDom(value);
-        return true;
-      }
-      target.setAttribute(key, toDom(value));
+      writeField(target, key, value, descriptor?.[key]);
       return true;
     },
   });

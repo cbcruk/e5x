@@ -1,4 +1,4 @@
-import type { ReadableAtom } from './types';
+import type { Deps, ReadableAtom } from './types';
 
 type Listener = () => void;
 
@@ -73,14 +73,19 @@ function version(node: Node): number {
   return versions.get(node)!;
 }
 
-export function memo<T>(node: Node, compute: () => T): () => T {
+// Valid while the node's version is unchanged and every dep still returns the same value.
+// Deps are pulled on read, so a held view is correct without anyone subscribing.
+export function memo<T>(node: Node, compute: () => T, deps: Deps = []): () => T {
   let cachedVersion = -1;
+  let cachedDeps: unknown[] = [];
   let cached: T;
   return () => {
     const current = version(node);
-    if (current !== cachedVersion) {
+    const values = deps.map((dep) => dep.get());
+    if (current !== cachedVersion || values.some((value, i) => !Object.is(value, cachedDeps[i]))) {
       cached = compute();
       cachedVersion = current;
+      cachedDeps = values;
     }
     return cached;
   };
@@ -121,20 +126,33 @@ export function derived<T>(
   node: Node,
   compute: () => T,
   isEqual: (a: T, b: T) => boolean = Object.is,
+  deps: Deps = [],
 ): ReadableAtom<T> {
-  const get = memo(node, compute);
+  const get = memo(node, compute, deps);
   return {
     get,
     subscribe(listener) {
       let previous = get();
       listener(previous);
-      return watch(node, () => {
+      const check = (): void => {
         const next = get();
         if (!isEqual(next, previous)) {
           previous = next;
           listener(next);
         }
-      });
+      };
+      const stops = [watch(node, check)];
+      for (const dep of deps) {
+        // The atom protocol calls a new listener immediately; that first call is not a change.
+        let subscribed = false;
+        stops.push(
+          dep.subscribe(() => {
+            if (subscribed) check();
+          }),
+        );
+        subscribed = true;
+      }
+      return () => stops.forEach((stop) => stop());
     },
   };
 }

@@ -30,30 +30,6 @@ export function bindText<T>(
   });
 }
 
-// e5x has no combinator across atoms (nanostores `computed` territory); this is the minimum
-// the demo needs to derive revenue from two columns.
-export function combine<A, B, R>(
-  a: ReadableAtom<A>,
-  b: ReadableAtom<B>,
-  fn: (a: A, b: B) => R,
-): ReadableAtom<R> {
-  return {
-    get: () => fn(a.get(), b.get()),
-    subscribe(listener) {
-      let ready = false;
-      const emit = (): void => {
-        if (ready) {
-          listener(fn(a.get(), b.get()));
-        }
-      };
-      const stops = [a.subscribe(emit), b.subscribe(emit)];
-      ready = true;
-      emit();
-      return () => stops.forEach((stop) => stop());
-    },
-  };
-}
-
 export function serialize(element: Element, depth = 0): string {
   const pad = '  '.repeat(depth);
   const name = element.localName;

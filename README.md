@@ -45,7 +45,8 @@ at that empty seat, with a reactivity layer E4X never had.
 
 - **`wrap(element, schema?)`** returns a Proxy over a DOM element.
 - A **schema descriptor** is the single source of truth: `'string' | 'number' | 'boolean'`
-  for leaves, `[childDescriptor]` for child collections. It drives both runtime coercion and
+  for leaves stored as attributes, `'<string>' | '<number>' | '<boolean>'` for leaves stored as
+  child element text, `[childDescriptor]` for child collections. It drives both runtime coercion and
   static types. Without a schema, `wrap(element)` runs in loose mode (everything is a string).
 - **element field → scalar** (`row[0].amount` → `number`); **collection field → Column**
   (`rows.amount` → `Column<number>` with `$sum / $avg / $min / $max / $values / $length`).
@@ -77,8 +78,8 @@ album.track.$length.get();       // number of tracks — the library
 
 E4X drew the same line by making methods calls (`length()`), which a JS Proxy cannot
 distinguish from a property read. The only bare names e5x claims are the atom protocol
-`get` / `subscribe` (so a collection works anywhere a nanostores atom or Svelte store does)
-and the JS hooks `toString` / `valueOf`. A schema that uses one of those names, or a
+`get` / `subscribe` — on collections, columns, and wrapped elements — and the JS hooks
+`toString` / `valueOf`. A schema that uses one of those names, or a
 `$`-prefixed name, is rejected at compile time and at `wrap()` time.
 
 In loose mode a name that is neither a child nor an attribute reads as an **empty collection**,
@@ -92,6 +93,29 @@ if (row.note.$length.get() > 0) { /* ... */ } // not: if (row.note)
 
 With a schema, missing leaves coerce instead (`''`, `NaN`, `false`).
 
+## Reactivity
+
+Everything reactive is an atom: `get()` plus `subscribe(listener)`, which calls the listener
+immediately and then on every change. That is the Svelte store contract, so e5x atoms work
+with Svelte's `$store` and `derived`. (nanostores' own `computed` needs its internal
+`listen`/`eq`/epoch, so it does not accept them — use e5x's `computed`.)
+
+```ts
+sales.item;                       // a collection: emits when members or order change
+sales.item.price.$sum;            // an aggregate: emits when the total changes
+sales.$.vendor;                   // one field of one element, as an atom
+item.subscribe((it) => paint(it)); // a wrapped element: emits on any change in its subtree
+
+import { computed } from 'e5x';
+const stock = computed([view.price, view.quantity], (prices, qty) =>
+  prices.reduce((total, p, i) => total + p * qty[i], 0),
+);
+```
+
+`element.$` mirrors the element's fields as atoms (Vue's `toRefs`): leaves become atoms, child
+collections appear as themselves. `computed` takes any get/subscribe atoms and emits once for
+changes that land in the same tick.
+
 ## Sort & filter
 
 ```ts
@@ -102,16 +126,34 @@ rows.$sort((a, b) => b.amount - a.amount);  // comparator over wrapped elements
 rows.$deep('price');                        // descendant axis (E4X's `..`), always loose
 ```
 
-A view recomputes only when the DOM under it changes, so predicates and comparators must
-depend on the element alone. If a filter reads outside state, build a new view when that
-state changes:
+A view recomputes when the DOM under it changes. A predicate or comparator that reads
+anything else must declare it as **deps** — atoms whose change also recomputes the view and
+notifies its subscribers, all the way down to columns and aggregates:
 
 ```ts
-rows.$where((r) => r.amount > min);         // re-create when `min` changes — it is not tracked
+const filters = wrap(filtersEl, { min: 'number', dir: 'string' } as const);
+const aboveMin = (r) => r.amount >= filters.min;
+const byAmount = (a, b) => (a.amount - b.amount) * (filters.dir === 'asc' ? 1 : -1);
+
+const view = rows.$where(aboveMin, [filters.$.min]).$sort(byAmount, [filters.$.dir]);
+filters.min = 100; // view, view.amount.$sum, … all update
 ```
+
+Leaving a read out of deps is not detected: the view keeps serving results for the old
+value. Deps are compared with `Object.is` on every read, so scalar atoms (like `filters.$.min`)
+keep the view memoized; an array-valued atom recomputes it every time. A function shares
+its view only with the same function and the same deps.
 
 Object predicates are copied when the view is created, so mutating the object afterwards
 has no effect on it.
+
+`$push` and field writes put each value where the schema says it lives:
+
+```ts
+const schema = { item: [{ type: 'string', note: '<string>' }] } as const;
+sales.item.$push({ type: 'tofu', note: 'Fresh' });
+// <item type="tofu"><note>Fresh</note></item>
+```
 
 Bulk write (typed) iterates wrapped elements:
 

@@ -25,11 +25,21 @@ export function weakCache<V extends object>(): ViewCache<V> {
   };
 }
 
-export function byIdentity<K extends object, V>(cache: WeakMap<K, V>, key: K, create: () => V): V {
-  let value = cache.get(key);
-  if (value === undefined) {
-    value = create();
-    cache.set(key, value);
+export type IdentityCache<K extends object, V> = WeakMap<K, { deps: readonly unknown[]; value: V }>;
+
+// Functions share by identity, but only with the same deps: one comparator reading two
+// different atoms is two different views.
+export function byIdentity<K extends object, V>(
+  cache: IdentityCache<K, V>,
+  key: K,
+  deps: readonly unknown[],
+  create: () => V,
+): V {
+  const hit = cache.get(key);
+  if (hit && hit.deps.length === deps.length && hit.deps.every((dep, i) => dep === deps[i])) {
+    return hit.value;
   }
+  const value = create();
+  cache.set(key, { deps, value });
   return value;
 }

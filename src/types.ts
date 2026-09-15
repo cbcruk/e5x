@@ -3,7 +3,11 @@ export interface ReadableAtom<T> {
   subscribe(listener: (value: T) => void): () => void;
 }
 
-export type LeafDescriptor = 'string' | 'number' | 'boolean';
+export type LeafType = 'string' | 'number' | 'boolean';
+
+// A bare leaf is stored as an attribute; `'<number>'` stores it as a child element's text.
+// Reads accept either storage; the marker decides what writes and `$push` create.
+export type LeafDescriptor = LeafType | `<${LeafType}>`;
 
 export type FieldDescriptor = LeafDescriptor | readonly [NodeDescriptor];
 
@@ -12,6 +16,9 @@ export interface NodeDescriptor {
 }
 
 export type SortDirection = 'asc' | 'desc';
+
+// Atoms a derived view depends on besides the DOM. The view recomputes when any of them changes.
+export type Deps = readonly ReadableAtom<unknown>[];
 
 // `$`-prefixed names belong to the library, bare names to the data. The atom protocol
 // (`get` / `subscribe`) and JS coercion hooks are the only bare names the library claims.
@@ -25,9 +32,9 @@ export type ValidDescriptor<N> = {
       : N[K];
 };
 
-type LeafValue<F extends LeafDescriptor> = F extends 'string'
+type LeafValue<F extends LeafDescriptor> = F extends 'string' | '<string>'
   ? string
-  : F extends 'number'
+  : F extends 'number' | '<number>'
     ? number
     : boolean;
 
@@ -39,6 +46,16 @@ type FieldValue<F> = F extends LeafDescriptor
 
 type ElementFields<N> = {
   -readonly [K in keyof N]: FieldValue<N[K]>;
+};
+
+// `element.$.field`: the same shape, atom-valued (Vue's `toRefs`). Child collections are
+// already atoms, so they appear as themselves.
+type AtomFields<N> = {
+  readonly [K in keyof N]: N[K] extends LeafDescriptor
+    ? ReadableAtom<LeafValue<N[K]>>
+    : N[K] extends readonly [infer Child]
+      ? Collection<Child>
+      : never;
 };
 
 type CollectionFields<N> = {
@@ -69,7 +86,14 @@ export interface WrappedBase {
   $deep(name: string): LooseCollection;
 }
 
-export type Wrapped<N> = WrappedBase & ElementFields<N>;
+// A wrapped element is itself an atom: it emits whenever anything in its subtree changes.
+interface ElementAtom<N> {
+  readonly $: AtomFields<N>;
+  get(): Wrapped<N>;
+  subscribe(listener: (element: Wrapped<N>) => void): () => void;
+}
+
+export type Wrapped<N> = WrappedBase & ElementAtom<N> & ElementFields<N>;
 
 export interface Column<T> {
   readonly $length: ReadableAtom<number>;
@@ -86,9 +110,10 @@ export interface Column<T> {
 
 interface CollectionBase<N> {
   readonly $length: ReadableAtom<number>;
-  $where(predicate: Predicate<N>): Collection<N>;
+  $where(predicate: WritableFields<N>): Collection<N>;
+  $where(predicate: (element: Wrapped<N>) => boolean, deps?: Deps): Collection<N>;
   $sort(field: SortKey<N>, direction?: SortDirection): Collection<N>;
-  $sort(comparator: (a: Wrapped<N>, b: Wrapped<N>) => number): Collection<N>;
+  $sort(comparator: (a: Wrapped<N>, b: Wrapped<N>) => number, deps?: Deps): Collection<N>;
   $deep(name: string): LooseCollection;
   $push(data: WritableFields<N>): Wrapped<N>;
   get(): Wrapped<N>[];
@@ -104,19 +129,19 @@ export type Collection<N> = CollectionBase<N> & CollectionFields<N>;
 export interface LooseWrapped {
   readonly $el: Element;
   readonly $attr: Record<string, string | null>;
+  readonly $: Record<string, ReadableAtom<any>>;
   $deep(name: string): LooseCollection;
+  get(): LooseWrapped;
+  subscribe(listener: (element: LooseWrapped) => void): () => void;
   [key: string]: any;
 }
 
 export interface LooseCollection {
   readonly $length: ReadableAtom<number>;
-  $where(
-    predicate: Record<string, unknown> | ((element: LooseWrapped) => boolean),
-  ): LooseCollection;
-  $sort(
-    field: string | ((a: LooseWrapped, b: LooseWrapped) => number),
-    direction?: SortDirection,
-  ): LooseCollection;
+  $where(predicate: Record<string, unknown>): LooseCollection;
+  $where(predicate: (element: LooseWrapped) => boolean, deps?: Deps): LooseCollection;
+  $sort(field: string, direction?: SortDirection): LooseCollection;
+  $sort(comparator: (a: LooseWrapped, b: LooseWrapped) => number, deps?: Deps): LooseCollection;
   $deep(name: string): LooseCollection;
   $push(data: Record<string, unknown>): LooseWrapped;
   get(): LooseWrapped[];

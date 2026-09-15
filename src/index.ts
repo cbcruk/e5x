@@ -1,4 +1,5 @@
 export { wrap } from './wrap';
+export { computed } from './computed';
 export type {
   Wrapped,
   Collection,
@@ -6,6 +7,8 @@ export type {
   NodeDescriptor,
   FieldDescriptor,
   LeafDescriptor,
+  LeafType,
+  Deps,
   SortDirection,
   ReservedName,
   ValidDescriptor,

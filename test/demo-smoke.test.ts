@@ -46,17 +46,36 @@ describe('demo drives e5x end to end', () => {
     ]);
   });
 
-  it('filters and sorts by building a new view, and links the shared dept view', () => {
+  it('filters and sorts one long-lived view through <filters> deps', async () => {
+    const filters = document.querySelector('filters')!;
     change(document.querySelector('#dept')!, 'dairy');
+    await flush();
+    expect(filters.getAttribute('dept')).toBe('dairy');
     expect(column('type')).toEqual(['cheese', 'milk']);
-    expect(text('#viewExpr')).toContain(".$where({'dept':'dairy'})");
     expect(text('#statValue')).toBe('$148.00');
-    expect(document.querySelector('.bar.linked')?.getAttribute('data-dept')).toBe('dairy');
+    expect(document.querySelector('.bar.selected')?.getAttribute('data-dept')).toBe('dairy');
+    expect(text('#xml')).toContain('<filters dept="dairy"');
 
     click('th[data-sort="price"]');
     click('th[data-sort="price"]');
+    await flush();
+    expect(filters.getAttribute('direction')).toBe('desc');
     expect(column('type')).toEqual(['cheese', 'milk']);
-    expect(text('#viewExpr')).toContain(".$sort('price', 'desc')");
+    expect(document.querySelector('th[data-sort="price"]')!.getAttribute('aria-sort')).toBe('descending');
+
+    click('.bar[data-dept="dairy"]');
+    await flush();
+    expect(filters.getAttribute('dept')).toBe('');
+    expect(text('#statCount')).toBe('5');
+  });
+
+  it('searches with a predicate that reads outside state', async () => {
+    const search = document.querySelector<HTMLInputElement>('#search')!;
+    search.value = 'ch';
+    search.dispatchEvent(new Event('input'));
+    await flush();
+    expect(column('type')).toEqual(['cheese']);
+    expect(text('#statCount')).toBe('1');
   });
 
   it('writes edits through the same path and reflects them everywhere', async () => {
@@ -108,12 +127,14 @@ describe('demo drives e5x end to end', () => {
 
   it('adds items with $push and grows the dept list', async () => {
     const form = document.querySelector<HTMLFormElement>('#add')!;
-    for (const [name, value] of Object.entries({ type: 'tofu', dept: 'deli', price: '4', quantity: '3' })) {
+    for (const [name, value] of Object.entries({ type: 'tofu', dept: 'deli', price: '4', quantity: '3', note: 'Fresh' })) {
       form.querySelector<HTMLInputElement>(`[name="${name}"]`)!.value = value;
     }
     form.dispatchEvent(new Event('submit', { cancelable: true }));
     await flush();
     expect(column('type')).toContain('tofu');
+    expect(document.querySelector('sales item[type="tofu"] > note')?.textContent).toBe('Fresh');
+    expect(text('#statNotes')).toBe('4');
     expect(Array.from(document.querySelectorAll('#dept option'), (o) => o.textContent)).toContain('deli');
     expect(document.querySelector('.bar[data-dept="deli"]')).not.toBeNull();
   });

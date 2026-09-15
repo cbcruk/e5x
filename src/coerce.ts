@@ -1,4 +1,4 @@
-import type { FieldDescriptor, LeafDescriptor, NodeDescriptor } from './types';
+import type { FieldDescriptor, LeafDescriptor, LeafType, NodeDescriptor } from './types';
 
 export function isLibraryName(key: string): boolean {
   return key.startsWith('$');
@@ -34,10 +34,38 @@ export function readRaw(element: Element, name: string): string | null {
   return child ? child.textContent : element.getAttribute(name);
 }
 
+const LEAVES = new Set(['string', 'number', 'boolean', '<string>', '<number>', '<boolean>']);
+
 export function isLeaf(
   descriptor: FieldDescriptor | undefined,
 ): descriptor is LeafDescriptor {
-  return descriptor === 'string' || descriptor === 'number' || descriptor === 'boolean';
+  return typeof descriptor === 'string' && LEAVES.has(descriptor);
+}
+
+function leafType(type: LeafDescriptor): LeafType {
+  return (type.startsWith('<') ? type.slice(1, -1) : type) as LeafType;
+}
+
+// Writes land where the data already lives: an existing child element, else the storage the
+// schema declares (`'<string>'` → child element), else an attribute.
+export function writeField(
+  element: Element,
+  name: string,
+  value: unknown,
+  field: FieldDescriptor | undefined,
+): void {
+  const existing = childrenNamed(element, name)[0];
+  if (existing) {
+    existing.textContent = toDom(value);
+    return;
+  }
+  if (isLeaf(field) && field.startsWith('<')) {
+    const child = element.ownerDocument.createElementNS(element.namespaceURI, name);
+    child.textContent = toDom(value);
+    element.append(child);
+    return;
+  }
+  element.setAttribute(name, toDom(value));
 }
 
 export function childDescriptor(
@@ -48,8 +76,9 @@ export function childDescriptor(
 
 export function fromDom(
   raw: string | null,
-  type: LeafDescriptor,
+  descriptor: LeafDescriptor,
 ): string | number | boolean {
+  const type = leafType(descriptor);
   if (type === 'number') {
     return raw === null ? NaN : Number(raw);
   }

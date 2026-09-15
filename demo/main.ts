@@ -1,9 +1,12 @@
-import { wrap } from '../src/index';
-import type { Collection, SortDirection, WritableFields } from '../src/index';
+import { computed, wrap } from '../src/index';
+import type { Wrapped } from '../src/index';
 import { importBatch } from './seed';
-import { $, bindText, combine, money, scope, serialize } from './util';
+import { $, bindText, money, scope, serialize } from './util';
 
-const schema = {
+// ---------------------------------------------------------------------------------------------
+// Two DOM trees, both sources of truth: the data (<sales>) and the UI state (<filters>).
+
+const salesSchema = {
   vendor: 'string',
   item: [
     {
@@ -12,217 +15,196 @@ const schema = {
       price: 'number',
       quantity: 'number',
       organic: 'boolean',
-      note: 'string',
+      note: '<string>',
     },
   ],
 } as const;
 
-type Item = (typeof schema)['item'][0];
+const filtersSchema = {
+  dept: 'string',
+  organic: 'boolean',
+  search: 'string',
+  sort: 'string',
+  direction: 'string',
+} as const;
+
+type Item = Wrapped<(typeof salesSchema)['item'][0]>;
 type SortField = 'type' | 'dept' | 'price' | 'quantity';
 
 const salesEl = $<Element>('sales');
-const sales = wrap(salesEl, schema);
+const filtersEl = $<Element>('filters');
+const sales = wrap(salesEl, salesSchema);
+const filters = wrap(filtersEl, filtersSchema);
 
 // ---------------------------------------------------------------------------------------------
-// View state lives outside the DOM model. Views depend on the DOM only, so a state change
-// builds a new view instead of mutating one.
+// One view for the page's lifetime. Its predicate and comparator read <filters>, so those
+// fields are declared as deps: the view recomputes when the data or the filters change.
 
-const state = {
-  dept: '',
-  organicOnly: false,
-  search: '',
-  sort: 'type' as SortField,
-  direction: 'asc' as SortDirection,
+const matchesFilters = (item: Item): boolean =>
+  (!filters.dept || item.dept === filters.dept) &&
+  (!filters.organic || item.organic) &&
+  item.type.toLowerCase().includes(filters.search.toLowerCase());
+
+const bySortField = (a: Item, b: Item): number => {
+  const field = filters.sort as SortField;
+  const x = a[field];
+  const y = b[field];
+  const order = x < y ? -1 : x > y ? 1 : 0;
+  return filters.direction === 'desc' ? -order : order;
 };
 
-let filterBase: Collection<Item> | null = null;
-
-function buildView(): { view: Collection<Item>; expr: string } {
-  let view: Collection<Item> = sales.item;
-  let expr = 'sales.item';
-
-  const where: WritableFields<Item> = {};
-  if (state.dept) where.dept = state.dept;
-  if (state.organicOnly) where.organic = true;
-  if (Object.keys(where).length > 0) {
-    view = view.$where(where);
-    expr += `.$where(${JSON.stringify(where).replaceAll('"', "'")})`;
-  }
-  filterBase = Object.keys(where).length > 0 ? view : null;
-
-  if (state.search) {
-    // A fresh function per search string: a hoisted predicate reading `state.search` would be
-    // shared by identity and keep serving results for the old string.
-    const needle = state.search.toLowerCase();
-    view = view.$where((item) => item.type.toLowerCase().includes(needle));
-    expr += `.$where((item) => item.type.includes('${state.search}'))`;
-  }
-
-  view = view.$sort(state.sort, state.direction);
-  expr += `.$sort('${state.sort}', '${state.direction}')`;
-  return { view, expr };
-}
+const view = sales.item
+  .$where(matchesFilters, [filters.$.dept, filters.$.organic, filters.$.search])
+  .$sort(bySortField, [filters.$.sort, filters.$.direction]);
 
 // ---------------------------------------------------------------------------------------------
-// Inventory table + stats, all bound to the current view.
+// Stats.
+
+bindText($('#statCount'), view.$length);
+bindText($('#statUnits'), view.quantity.$sum);
+bindText($('#statAvg'), view.price.$avg, money);
+bindText(
+  $('#statRange'),
+  computed([view.price.$min, view.price.$max], (min, max) =>
+    Number.isFinite(min) ? `${money(min)}–${money(max).slice(1)}` : '–',
+  ),
+);
+bindText(
+  $('#statValue'),
+  computed([view.price, view.quantity], (prices, quantities) =>
+    prices.reduce((total, price, i) => total + price * (quantities[i] ?? 0), 0),
+  ),
+  money,
+);
+bindText($('#statNotes'), sales.$deep('note').$length);
+
+// ---------------------------------------------------------------------------------------------
+// Inventory: the view renders rows when membership or order changes; each row subscribes to
+// its own element, so a value change repaints one row.
 
 const rowsBody = $('#rows');
-const viewScope = scope();
+const rowScope = scope();
 
-function mountView(): void {
-  viewScope.reset();
-  const { view, expr } = buildView();
-  $('#viewExpr').textContent = expr;
+view.subscribe((items) => {
+  rowScope.reset();
+  rowsBody.replaceChildren(...items.map((item, index) => renderRow(item, index)));
+});
 
-  // Membership or order changed → rebuild rows.
-  viewScope.add(view.subscribe((items) => renderRows(view, items)));
+function renderRow(item: Item, index: number): HTMLTableRowElement {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td data-field="type"></td>
+    <td data-field="dept"></td>
+    <td data-field="note" class="note"></td>
+    <td class="num fit"><input data-field="price" type="number" step="0.01" min="0" /></td>
+    <td class="num fit"><input data-field="quantity" type="number" min="0" /></td>
+    <td class="fit"><input data-field="organic" type="checkbox" /></td>
+    <td class="fit"><button class="del" title="delete view[${index}]">✕</button></td>`;
 
-  // Values changed → patch cells. Columns line up with the view's members by index.
-  viewScope.add(view.type.subscribe((values) => patch('type', values)));
-  viewScope.add(view.dept.subscribe((values) => patch('dept', values)));
-  viewScope.add(view.note.subscribe((values) => patch('note', values)));
-  viewScope.add(view.price.subscribe((values) => patch('price', values)));
-  viewScope.add(view.quantity.subscribe((values) => patch('quantity', values)));
-  viewScope.add(view.organic.subscribe((values) => patch('organic', values)));
+  const cell = <T extends HTMLElement = HTMLElement>(field: string): T =>
+    $<T>(`[data-field="${field}"]`, tr);
+  const price = cell<HTMLInputElement>('price');
+  const quantity = cell<HTMLInputElement>('quantity');
+  const organic = cell<HTMLInputElement>('organic');
 
-  viewScope.add(bindText($('#statCount'), view.$length));
-  viewScope.add(bindText($('#statUnits'), view.quantity.$sum));
-  viewScope.add(bindText($('#statAvg'), view.price.$avg, money));
-  viewScope.add(
-    bindText(
-      $('#statRange'),
-      combine(view.price.$min, view.price.$max, (min, max) =>
-        Number.isFinite(min) ? `${money(min)}–${money(max).slice(1)}` : '–',
-      ),
-    ),
-  );
-  viewScope.add(
-    bindText(
-      $('#statValue'),
-      combine(view.price, view.quantity, (prices, quantities) =>
-        prices.reduce((total, price, i) => total + price * (quantities[i] ?? 0), 0),
-      ),
-      money,
-    ),
-  );
-
-  for (const th of document.querySelectorAll<HTMLElement>('th[data-sort]')) {
-    const active = th.dataset.sort === state.sort;
-    th.setAttribute('aria-sort', active ? (state.direction === 'asc' ? 'ascending' : 'descending') : 'none');
-  }
-  highlightLinkedBar();
-}
-
-function renderRows(view: Collection<Item>, items: ReturnType<Collection<Item>['get']>): void {
-  rowsBody.replaceChildren(
-    ...items.map((item, index) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td data-field="type"></td>
-        <td data-field="dept"></td>
-        <td data-field="note" class="note"></td>
-        <td class="num fit"><input data-field="price" type="number" step="0.01" min="0" /></td>
-        <td class="num fit"><input data-field="quantity" type="number" min="0" /></td>
-        <td class="fit"><input data-field="organic" type="checkbox" /></td>
-        <td class="fit"><button class="del" title="delete view[${index}]">✕</button></td>`;
-
-      // Writes go through the same path the table reads from.
-      const price = $<HTMLInputElement>('[data-field="price"]', tr);
-      price.addEventListener('change', () => {
-        if (Number.isFinite(price.valueAsNumber)) item.price = price.valueAsNumber;
-      });
-      const quantity = $<HTMLInputElement>('[data-field="quantity"]', tr);
-      quantity.addEventListener('change', () => {
-        if (Number.isFinite(quantity.valueAsNumber)) item.quantity = quantity.valueAsNumber;
-      });
-      const organic = $<HTMLInputElement>('[data-field="organic"]', tr);
-      organic.addEventListener('change', () => {
-        item.organic = organic.checked;
-      });
-      $('.del', tr).addEventListener('click', () => {
-        delete view[index];
-      });
-      return tr;
+  rowScope.add(
+    item.subscribe((current) => {
+      cell('type').textContent = current.type;
+      cell('dept').textContent = current.dept;
+      cell('note').textContent = current.note;
+      if (document.activeElement !== price) price.value = String(current.price);
+      if (document.activeElement !== quantity) quantity.value = String(current.quantity);
+      organic.checked = current.organic;
     }),
   );
+
+  // Writes go through the same path the row reads from.
+  price.addEventListener('change', () => {
+    if (Number.isFinite(price.valueAsNumber)) item.price = price.valueAsNumber;
+  });
+  quantity.addEventListener('change', () => {
+    if (Number.isFinite(quantity.valueAsNumber)) item.quantity = quantity.valueAsNumber;
+  });
+  organic.addEventListener('change', () => {
+    item.organic = organic.checked;
+  });
+  $('.del', tr).addEventListener('click', () => {
+    delete view[index];
+  });
+  return tr;
 }
 
-function patch(field: keyof Item, values: readonly (string | number | boolean)[]): void {
-  values.forEach((value, index) => {
-    const cell = rowsBody.children[index]?.querySelector<HTMLElement>(`[data-field="${field}"]`);
-    if (!cell) return;
-    if (cell instanceof HTMLInputElement) {
-      if (cell.type === 'checkbox') cell.checked = value === true;
-      else if (document.activeElement !== cell) cell.value = String(value);
-    } else {
-      cell.textContent = String(value);
-    }
-  });
-}
-
-for (const th of document.querySelectorAll<HTMLElement>('th[data-sort]')) {
-  th.addEventListener('click', () => {
-    const field = th.dataset.sort as SortField;
-    state.direction = state.sort === field && state.direction === 'asc' ? 'desc' : 'asc';
-    state.sort = field;
-    mountView();
-  });
-}
+// Controls write UI state into <filters>; the view reacts through its deps.
 
 const deptSelect = $<HTMLSelectElement>('#dept');
-deptSelect.addEventListener('change', () => {
-  state.dept = deptSelect.value;
-  mountView();
+const organicBox = $<HTMLInputElement>('#organic');
+const searchInput = $<HTMLInputElement>('#search');
+
+deptSelect.addEventListener('change', () => (filters.dept = deptSelect.value));
+organicBox.addEventListener('change', () => (filters.organic = organicBox.checked));
+searchInput.addEventListener('input', () => (filters.search = searchInput.value.trim()));
+
+filters.$.organic.subscribe((checked) => (organicBox.checked = checked));
+filters.$.search.subscribe((search) => {
+  if (document.activeElement !== searchInput) searchInput.value = search;
 });
-$<HTMLInputElement>('#organic').addEventListener('change', (event) => {
-  state.organicOnly = (event.target as HTMLInputElement).checked;
-  mountView();
-});
-$<HTMLInputElement>('#search').addEventListener('input', (event) => {
-  state.search = (event.target as HTMLInputElement).value.trim();
-  mountView();
-});
+
+const sortHeaders = Array.from(document.querySelectorAll<HTMLElement>('th[data-sort]'));
+for (const th of sortHeaders) {
+  th.addEventListener('click', () => {
+    const field = th.dataset.sort!;
+    filters.direction = filters.sort === field && filters.direction === 'asc' ? 'desc' : 'asc';
+    filters.sort = field;
+  });
+}
+computed([filters.$.sort, filters.$.direction], (sort, direction) => `${sort}:${direction}`).subscribe(
+  () => {
+    for (const th of sortHeaders) {
+      const active = th.dataset.sort === filters.sort;
+      const direction = filters.direction === 'asc' ? 'ascending' : 'descending';
+      th.setAttribute('aria-sort', active ? direction : 'none');
+    }
+  },
+);
 
 // Typed bulk writes iterate wrapped elements (a read is a Column, so `view.organic = true`
 // cannot be typed).
 $('#bulkOrganic').addEventListener('click', () => {
-  for (const item of buildView().view) item.organic = true;
+  for (const item of view) item.organic = true;
 });
 $('#bulkPrice').addEventListener('click', () => {
-  for (const item of buildView().view) item.price = Math.round(item.price * 110) / 100;
+  for (const item of view) item.price = Math.round(item.price * 110) / 100;
 });
 
 const addForm = $<HTMLFormElement>('#add');
 addForm.addEventListener('submit', (event) => {
   event.preventDefault();
   const data = new FormData(addForm);
+  const note = String(data.get('note') ?? '').trim();
   sales.item.$push({
     type: String(data.get('type')),
     dept: String(data.get('dept')),
     price: Number(data.get('price')),
     quantity: Number(data.get('quantity')),
     organic: false,
+    // `note: '<string>'` in the schema makes this a <note> child, like the seeded items.
+    ...(note ? { note } : {}),
   });
   addForm.reset();
 });
 
 // ---------------------------------------------------------------------------------------------
-// Dept breakdown over the whole data set. `sales.item.$where({ dept })` returns the same view
-// the inventory filter built for that dept, so the two share one computation.
+// Dept breakdown. `sales.item.$where({ dept })` is shared: any other place asking for the same
+// path gets this same view. Clicking a bar writes the dept filter.
 
 const bars = $('#bars');
 const barScope = scope();
-let barViews = new Map<string, Collection<Item>>();
-
-bindText($('#statNotes'), sales.$deep('note').$length);
 
 sales.item.dept.$values.subscribe((allDepts) => {
   const depts = [...new Set(allDepts)].sort();
   syncDeptOptions(depts);
 
   barScope.reset();
-  barViews = new Map();
-  bars.replaceChildren();
   const totals = new Map<string, number>();
   const redraw = (): void => {
     const max = Math.max(1, ...totals.values());
@@ -233,42 +215,48 @@ sales.item.dept.$values.subscribe((allDepts) => {
     }
   };
 
+  bars.replaceChildren(
+    ...depts.map((dept) => {
+      const bar = document.createElement('button');
+      bar.className = 'bar';
+      bar.dataset.dept = dept;
+      bar.innerHTML = `<span></span><span class="track"><span class="fill"></span></span><span class="n"></span>`;
+      bar.firstElementChild!.textContent = dept;
+      bar.addEventListener('click', () => (filters.dept = filters.dept === dept ? '' : dept));
+      return bar;
+    }),
+  );
   for (const dept of depts) {
-    const view = sales.item.$where({ dept });
-    barViews.set(dept, view);
-    const bar = document.createElement('div');
-    bar.className = 'bar';
-    bar.dataset.dept = dept;
-    bar.innerHTML = `<span></span><div class="track"><div class="fill"></div></div><span class="n"></span>`;
-    bar.firstElementChild!.textContent = dept;
-    bars.append(bar);
     barScope.add(
-      view.quantity.$sum.subscribe((n) => {
+      sales.item.$where({ dept }).quantity.$sum.subscribe((n) => {
         totals.set(dept, n);
         redraw();
       }),
     );
   }
-  highlightLinkedBar();
+  markSelectedDept(filters.dept);
 });
 
-function highlightLinkedBar(): void {
+filters.$.dept.subscribe((dept) => {
+  deptSelect.value = dept;
+  markSelectedDept(dept);
+});
+
+function markSelectedDept(dept: string): void {
   for (const bar of bars.children) {
-    const view = barViews.get((bar as HTMLElement).dataset.dept!);
-    bar.classList.toggle('linked', view !== undefined && view === filterBase);
+    bar.classList.toggle('selected', (bar as HTMLElement).dataset.dept === dept);
   }
 }
 
 function syncDeptOptions(depts: string[]): void {
-  if (state.dept && !depts.includes(state.dept)) {
-    state.dept = '';
-    queueMicrotask(mountView);
+  if (filters.dept && !depts.includes(filters.dept)) {
+    filters.dept = '';
   }
   const option = (label: string, value: string): HTMLOptionElement => {
     const element = document.createElement('option');
     element.textContent = label;
     element.value = value;
-    element.selected = value === state.dept;
+    element.selected = value === filters.dept;
     return element;
   };
   deptSelect.replaceChildren(option('all', ''), ...depts.map((dept) => option(dept, dept)));
@@ -296,26 +284,18 @@ $('#importJsx').addEventListener('click', () => {
 });
 
 // ---------------------------------------------------------------------------------------------
-// Header + raw model view. e5x has no atom for a single element's own fields yet (`sales.vendor`
-// reads as a plain string), so these two listen with a platform MutationObserver.
+// Header and the live model: a field atom and whole-element atoms.
 
 const vendorInput = $<HTMLInputElement>('#vendor');
-vendorInput.value = sales.vendor;
-vendorInput.addEventListener('input', () => {
-  sales.vendor = vendorInput.value;
+vendorInput.addEventListener('input', () => (sales.vendor = vendorInput.value));
+sales.$.vendor.subscribe((vendor) => {
+  $('#vendorTitle').textContent = vendor;
+  if (document.activeElement !== vendorInput) vendorInput.value = vendor;
 });
 
-const xml = $('#xml');
-function renderModel(): void {
-  $('#vendorTitle').textContent = sales.vendor;
-  xml.textContent = serialize(salesEl);
-}
-new MutationObserver(renderModel).observe(salesEl, {
-  subtree: true,
-  childList: true,
-  attributes: true,
-  characterData: true,
-});
-
-renderModel();
-mountView();
+const model = $('#xml');
+const renderModel = (): void => {
+  model.textContent = `${serialize(filtersEl)}\n\n${serialize(salesEl)}`;
+};
+filters.subscribe(renderModel);
+sales.subscribe(renderModel);

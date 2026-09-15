@@ -1,6 +1,6 @@
 import { derived, memo } from './reactive';
 import { fromDom, readRaw } from './coerce';
-import type { Column, LeafDescriptor, ReadableAtom } from './types';
+import type { Column, Deps, LeafDescriptor, ReadableAtom } from './types';
 
 type Leaf = string | number | boolean;
 
@@ -9,6 +9,7 @@ interface ColumnConfig {
   field: string;
   type: LeafDescriptor;
   compute: () => Element[];
+  deps: Deps;
 }
 
 function shallowEqual(a: readonly unknown[], b: readonly unknown[]): boolean {
@@ -29,9 +30,11 @@ function extreme(values: Leaf[], direction: 1 | -1): Leaf {
 }
 
 export function createColumn(config: ColumnConfig): Column<Leaf> {
-  const { root, field, type, compute } = config;
-  const values = memo(root, (): Leaf[] =>
-    compute().map((element) => fromDom(readRaw(element, field), type)),
+  const { root, field, type, compute, deps } = config;
+  const values = memo(
+    root,
+    (): Leaf[] => compute().map((element) => fromDom(readRaw(element, field), type)),
+    deps,
   );
   // The memoized array is shared by every aggregate; hand callers their own copy.
   const snapshot = (): Leaf[] => values().slice();
@@ -42,14 +45,14 @@ export function createColumn(config: ColumnConfig): Column<Leaf> {
   // its own copy, while the underlying values memo is still computed once.
   const valuesAtom: ReadableAtom<Leaf[]> = {
     get: snapshot,
-    subscribe: (listener) => derived(root, snapshot, shallowEqual).subscribe(listener),
+    subscribe: (listener) => derived(root, snapshot, shallowEqual, deps).subscribe(listener),
   };
   const aggregates = {
-    $length: derived(root, () => values().length),
-    $sum: derived(root, sum),
-    $avg: derived(root, () => (values().length === 0 ? NaN : sum() / values().length)),
-    $min: derived(root, () => extreme(values(), -1)),
-    $max: derived(root, () => extreme(values(), 1)),
+    $length: derived(root, () => values().length, Object.is, deps),
+    $sum: derived(root, sum, Object.is, deps),
+    $avg: derived(root, () => (values().length === 0 ? NaN : sum() / values().length), Object.is, deps),
+    $min: derived(root, () => extreme(values(), -1), Object.is, deps),
+    $max: derived(root, () => extreme(values(), 1), Object.is, deps),
   };
 
   const api = {

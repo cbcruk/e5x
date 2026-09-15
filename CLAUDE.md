@@ -89,10 +89,11 @@ attr/child 충돌보다 흔한 건 **API 이름과 필드 이름** 충돌(`lengt
   JS에선 불가, 대신 접두사로 가른다. MongoDB(`$where/$sort/$push`), Vue(`$el/$attrs`) 선례.
   기존 `where`(bare) + `$sum`(`$`) 혼재도 규칙 하나로 정리됨.
 - **예외는 atom 프로토콜 `get`/`subscribe`** (+ JS 훅 `toString`/`valueOf`). collection이
-  nanostores atom / Svelte store 계약을 만족해야 "atom과 query 동격"이 유지됨. Promise의
-  `then`처럼 프로토콜 이름은 bare로 둔다.
+  Svelte store 계약(get/subscribe)을 만족해야 "atom과 query 동격"이 유지됨. Promise의
+  `then`처럼 프로토콜 이름은 bare로 둔다. (Phase 10부터 wrapped element도 atom이라 원소
+  레벨에서도 예약.)
 - 예약 이름(위 4개 + `$*`)을 schema에 쓰면 **컴파일 에러**(필드를 짚는 메시지) + `wrap()` 런타임
-  TypeError. loose 모드에서 그 이름의 열은 collection 레벨에서 접근 불가(원소 레벨은 가능).
+  TypeError. loose 모드에서 그 이름의 데이터는 `$attr`로만 접근.
 - sync `length` 제거 → `$length.get()`. 알 수 없는 `$` 이름은 데이터로 해석하지 않고 `undefined`.
 - 비용: `.$where`가 `.where`보다 시끄럽다. 충돌 없는 이름 공간과 맞바꾼 것.
 
@@ -100,9 +101,12 @@ attr/child 충돌보다 흔한 건 **API 이름과 필드 이름** 충돌(`lengt
 
 `query()` 실험에서 검증된 모델 유지:
 
-- `get()` / `subscribe()` 인터페이스 = nanostores atom과 동일 shape (Standard Schema)
-- 그래서 `effect(query(...), ...)`가 atom과 동등하게 작동 — atom과 query가 동격의
-  reactive source가 되는 것이 설계의 수확
+- `get()` / `subscribe()` 인터페이스 = Svelte store 계약과 동일 shape
+- 그래서 get/subscribe만 요구하는 소비자(Svelte `$store`/`derived`, e5x `computed`)에게 atom과
+  query가 동격의 reactive source — 이것이 설계의 수확
+- **정정 (Phase 10, nanostores 1.5.3 소스 확인)**: nanostores `computed`는 `listen`/`eq`와 전역
+  `nanostoresGlobal.epoch`를 요구해 e5x atom을 받지 못한다. "nanostores atom과 동일 shape"는
+  사실이 아니었다. 호환하려면 nanostores 내부 epoch에 결합해야 해서 하지 않음.
 - `.$where()`는 새 live derived set을 반환 (computed atom처럼)
 
 ## 기술 스택 / 구현 메모
@@ -376,7 +380,7 @@ Column이 아니라 Collection을 반환했다(타입은 Column). 이제 schema�
 - 테스트는 셀렉터 확인이 아니라 데모를 **실제로 조작**하는 7개 시나리오. 헤드리스 Chromium
   스크린샷으로 데스크톱/400px/다크 모드 확인.
 
-**데모가 드러낸 API 공백** (다음 결정 후보):
+**데모가 드러낸 API 공백** → 전부 Phase 10에서 해소:
 
 1. **원소 자신의 필드에 atom 없음**: `sales.vendor`는 plain string이라 구독 불가 → 헤더와
    모델 패널은 플랫폼 MutationObserver로 우회.
@@ -389,6 +393,30 @@ Column이 아니라 Collection을 반환했다(타입은 Column). 이제 schema�
    문서화만 됨 — dev 경고나 API 차원 해법 검토 가치 있음.
 5. `$push`는 attribute만 써서 `<note>` 같은 child text 필드를 만들 수 없다 (추가 폼에서 note 제외).
 
+## Phase 10: API 공백 5가지 해소 — **완료** (`pnpm test` 66/66, `test/atoms.test.ts`)
+
+| 공백 | 결정 | 근거 |
+|---|---|---|
+| 1. 원소 필드 atom | `element.$.field` → `ReadableAtom` (child collection은 자기 자신) | Vue `toRefs`: 같은 모양, atom 값 |
+| 3. 행/셀 구독 | wrapped element 자체가 atom — subtree 변경 시 자기 자신을 emit | 노드별 listener 인덱스로 행 N개 구독도 자기 행 변경에만 깨어남 |
+| 2. atom 조합 | `computed(atoms, fn)` export, 같은 tick 변경은 1회 emit | nanostores `computed` 모양 (nanostores 자체는 호환 불가 — 위 정정) |
+| 4. 외부 상태 predicate | 함수 `$where(fn, deps)` / `$sort(cmp, deps)` | React deps, Svelte `derived(stores)` |
+| 5. child text 쓰기 | schema `'<string>'` = child element 저장 | schema가 이미 타입·변환의 단일 진실 |
+
+deps 설계:
+
+- memo 유효 조건 = DOM version 동일 **그리고** 모든 dep의 `get()`이 `Object.is`로 동일. pull 기반이라
+  아무도 구독 안 해도 held view가 정확하다.
+- 구독 시 dep도 구독(첫 즉시 호출은 변경 아님으로 무시). deps는 경로를 따라 **누적 상속** —
+  하위 `$sort`, 열, 집계, `$deep`까지.
+- 캐시: 함수 identity + deps identity가 모두 같을 때만 공유.
+- 필터 상태도 DOM(`<filters>`)에 두고 `filters.$.dept`를 dep으로 — source of truth 규율이 UI
+  상태까지 확장됨. 데모는 뷰 재생성 코드가 사라지고 **뷰 하나가 페이지 수명 동안** 유지.
+
+데모 재작성: MutationObserver 우회, `combine` 헬퍼, 필드별 Column 구독 6개, 필터 변경 시 뷰
+재마운트 전부 제거. 헤드리스 Chromium을 DevTools 프로토콜로 조작해 필터/정렬/편집 후 재정렬/
+검색/외부 쓰기/JSX import가 실제 브라우저에서 올바른 값을 내는 것 확인.
+
 ## 알려진 약점 (정직하게)
 
 - bulk write read/write 비대칭 → typed에선 iteration 강제.
@@ -397,7 +425,10 @@ Column이 아니라 Collection을 반환했다(타입은 Column). 이제 schema�
 - 필드 이름 `get`/`subscribe`는 schema에서 금지, loose 모드에선 collection 레벨 열로 접근 불가
   (atom 프로토콜과 맞바꾼 비용).
 - inline arrow predicate/comparator는 매번 새 함수라 뷰 공유 불가 — 공유하려면 함수를 끌어올릴 것.
-- 크기: sub-kB 미학에서 멀어지는 중 (gzip 3.42kB). 캐시 계층이 대부분.
+- 크기: sub-kB 미학에서 멀어지는 중 (gzip 4.06kB). 캐시 계층 + Phase 10 API.
+- deps를 빠뜨리면 여전히 조용히 틀린다 (React exhaustive-deps와 같은 한계, 탐지 불가).
+- 배열 값 atom(Column 등)을 dep으로 쓰면 `get()`이 매번 새 배열이라 memo가 무력화 (정확성은 유지).
+- 원소 atom은 거칠다: `sales.subscribe`는 어떤 item이 바뀌어도 발화. 세밀함은 `$.field`로.
 - typed collection의 index signature는 **writable** (결정 2026-09): TS는 `delete`만 허용하고
   대입을 막는 방법이 없다(readonly는 둘 다 막음). E4X식 `delete sales.item[0]` 대칭을 택함.
   구멍: `c[0] = otherRow`(wrapped 원소)는 타입 통과 후 런타임 TypeError. 일반 객체 대입은 타입 에러.
@@ -410,4 +441,3 @@ Column이 아니라 Collection을 반환했다(타입은 Column). 이제 schema�
 - 패키징(.d.ts, exports map, vite-plugin-dts) → npm publish 여부 결정
 - E4X 연산자 문법 커스텀 파서 (진짜 transpiler) — 큰 결정, 수요 확인 후
 - 대량 데이터 인덱싱 (selector→set 역색인) — 실측 병목 나오면
-- Phase 9 데모가 드러낸 API 공백 1~5

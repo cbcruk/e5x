@@ -1,7 +1,7 @@
 import { wrapNode } from './wrap';
 import { createColumn } from './column';
 import { derived, memo, sameElements } from './reactive';
-import { byIdentity, weakCache } from './cache';
+import { byIdentity, weakCache, type IdentityCache } from './cache';
 import { matches } from './match';
 import {
   childrenNamed,
@@ -10,9 +10,10 @@ import {
   isLibraryName,
   readRaw,
   fromDom,
-  toDom,
+  writeField,
 } from './coerce';
 import type {
+  Deps,
   LeafDescriptor,
   LooseCollection,
   LooseWrapped,
@@ -27,6 +28,7 @@ interface CollectionConfig {
   tagName: string | null;
   descriptor: NodeDescriptor | null;
   compute: () => Element[];
+  deps?: Deps;
 }
 
 type ObjectPredicate = Record<string, unknown>;
@@ -55,7 +57,9 @@ function isIndex(key: string): number | null {
 
 export function createCollection(config: CollectionConfig): LooseCollection {
   const { root, owner, tagName, descriptor } = config;
-  const compute = memo(root, config.compute);
+  // Deps accumulate down the path: anything derived from this view also depends on them.
+  const deps = config.deps ?? [];
+  const compute = memo(root, config.compute, deps);
 
   function leafType(name: string): LeafDescriptor {
     const field = descriptor?.[name];
@@ -74,8 +78,10 @@ export function createCollection(config: CollectionConfig): LooseCollection {
     }
     let kind = fieldKinds.get(name);
     if (!kind) {
-      kind = memo(root, () =>
-        compute().some((element) => childrenNamed(element, name).length > 0),
+      kind = memo(
+        root,
+        () => compute().some((element) => childrenNamed(element, name).length > 0),
+        deps,
       );
       fieldKinds.set(name, kind);
     }
@@ -95,39 +101,41 @@ export function createCollection(config: CollectionConfig): LooseCollection {
           tagName: name,
           descriptor: childDescriptor(descriptor?.[name]),
           compute: () => compute().flatMap((element) => childrenNamed(element, name)),
+          deps,
         })
-      : createColumn({ root, field: name, type: leafType(name), compute });
+      : createColumn({ root, field: name, type: leafType(name), compute, deps });
     fieldViews.set(name, { hasChildren, view });
     return view;
   }
 
   // Derived views are shared: the same path asked twice returns the same memoized view, so
   // subscribers in different places compute once per DOM version.
-  const whereByFunction = new WeakMap<FunctionPredicate, LooseCollection>();
+  const whereByFunction: IdentityCache<FunctionPredicate, LooseCollection> = new WeakMap();
   const whereByObject = weakCache<LooseCollection>();
-  const sortByComparator = new WeakMap<Comparator, LooseCollection>();
+  const sortByComparator: IdentityCache<Comparator, LooseCollection> = new WeakMap();
   const sortByField = weakCache<LooseCollection>();
   const deepByName = weakCache<LooseCollection>();
   let lengthAtom: ReadableAtom<number> | null = null;
 
-  function filtered(predicate: ObjectPredicate | FunctionPredicate): LooseCollection {
+  function filtered(predicate: ObjectPredicate | FunctionPredicate, own: Deps = []): LooseCollection {
     return createCollection({
       root,
       owner,
       tagName,
       descriptor,
       compute: () => compute().filter((element) => matches(element, predicate, descriptor)),
+      deps: [...deps, ...own],
     });
   }
 
-  function sorted(sort: () => Element[]): LooseCollection {
-    return createCollection({ root, owner, tagName, descriptor, compute: sort });
+  function sorted(sort: () => Element[], own: Deps = []): LooseCollection {
+    return createCollection({ root, owner, tagName, descriptor, compute: sort, deps: [...deps, ...own] });
   }
 
   const api = {
-    $where(predicate: ObjectPredicate | FunctionPredicate): LooseCollection {
+    $where(predicate: ObjectPredicate | FunctionPredicate, own: Deps = []): LooseCollection {
       if (typeof predicate === 'function') {
-        return byIdentity(whereByFunction, predicate, () => filtered(predicate));
+        return byIdentity(whereByFunction, predicate, own, () => filtered(predicate, own));
       }
       // Snapshot, so mutating the caller's object cannot change a view shared under its old key.
       const snapshot = { ...predicate };
@@ -136,14 +144,18 @@ export function createCollection(config: CollectionConfig): LooseCollection {
         ? filtered(snapshot)
         : whereByObject.get(key, () => filtered(snapshot));
     },
-    $sort(field: string | Comparator, direction: SortDirection = 'asc'): LooseCollection {
+    $sort(field: string | Comparator, option: SortDirection | Deps = 'asc'): LooseCollection {
       if (typeof field === 'function') {
-        return byIdentity(sortByComparator, field, () =>
-          sorted(() =>
-            [...compute()].sort((a, b) => field(wrapNode(a, descriptor), wrapNode(b, descriptor))),
+        const own = Array.isArray(option) ? option : [];
+        return byIdentity(sortByComparator, field, own, () =>
+          sorted(
+            () =>
+              [...compute()].sort((a, b) => field(wrapNode(a, descriptor), wrapNode(b, descriptor))),
+            own,
           ),
         );
       }
+      const direction = option === 'desc' ? 'desc' : 'asc';
       return sortByField.get(JSON.stringify([field, direction]), () =>
         sorted(() => {
           // Read each key once instead of on every comparison.
@@ -167,6 +179,7 @@ export function createCollection(config: CollectionConfig): LooseCollection {
           descriptor: null,
           compute: () =>
             compute().flatMap((element) => Array.from(element.querySelectorAll(name))),
+          deps,
         }),
       );
     },
@@ -176,7 +189,7 @@ export function createCollection(config: CollectionConfig): LooseCollection {
       }
       const element = owner.ownerDocument.createElement(tagName);
       for (const [key, value] of Object.entries(data)) {
-        element.setAttribute(key, toDom(value));
+        writeField(element, key, value, descriptor?.[key]);
       }
       owner.appendChild(element);
       return wrapNode(element, descriptor);
@@ -185,12 +198,12 @@ export function createCollection(config: CollectionConfig): LooseCollection {
       return compute().map((element) => wrapNode(element, descriptor));
     },
     subscribe(listener: (value: LooseWrapped[]) => void): () => void {
-      return derived(root, compute, sameElements).subscribe(() => {
+      return derived(root, compute, sameElements, deps).subscribe(() => {
         listener(compute().map((element) => wrapNode(element, descriptor)));
       });
     },
     get $length(): ReadableAtom<number> {
-      lengthAtom ??= derived(root, () => compute().length);
+      lengthAtom ??= derived(root, () => compute().length, Object.is, deps);
       return lengthAtom;
     },
     [Symbol.iterator](): Iterator<LooseWrapped> {
