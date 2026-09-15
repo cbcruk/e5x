@@ -536,11 +536,18 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
     안전망이 기본 꺼짐.
   - `DEV`만 상수로 해도 부족했다: `createTracker`가 런타임에 null을 돌려주는 구조라 stale check 문구가 남음 →
     호출부를 `DEV && config.label ?`로 바꿔 접히게 함.
-- 측정(Vite 8 앱 빌드, minify+gzip, 전체 export 사용): production 조건 3,692B / 조건 없이 기본 엔트리 4,355B(dev 코드
-  남음, 비활성) / `e5x/jsx` 382B. 예산 `e5x` 4,000B, `e5x/jsx` 450B.
+- 측정(Vite 8 앱 빌드, minify+gzip, 전체 export 사용): production 조건 3,692B / 조건 없이 기본 엔트리 4,358B(dev 코드
+  남음, 비활성) / `e5x/jsx` 382B.
 - `pnpm size`: 가상 fixture 앱을 Vite `build()`로 번들. `e5x`는 self-reference로 `dist`의 exports map을 따라 해석된다
-  (`pnpm build` 선행). 예산 초과, production 번들에 dev 경고 문구 존재, **development 번들에 dev 문구 부재** 중 하나라도
-  있으면 실패(마지막은 조건이 뒤집히는 회귀 방지).
+  (`pnpm build` 선행). 실패 조건:
+  - 예산 초과: `e5x` 4,000B, `e5x/jsx` 450B, 조건 없는 번들러·Node가 받는 **기본 엔트리** 4,700B.
+  - production 번들에 dev 경고 문구가 있음.
+  - `dist/index.production.js`의 `//#region src/dev.ts`에 `WeakMap`·`Set`·`console`·`process`가 있음. 경고 문구가
+    없는 dev 코드(atom 등록부)를 잡는다. lib 출력은 **식별자가 mangle돼** 함수 이름으로는 못 찾는다(main에서도 그랬음).
+  - development 번들에 dev 문구가 없음(조건이 뒤집히는 회귀 방지).
+  - happy-dom에서 `dist/index.production.js` smoke가 틀림: 테스트는 `src`만 돌리므로 빌드 산출물의 동작, 그리고 deps
+    누락 predicate에 경고가 **안** 뜨는지 확인.
+  - 각 조건은 회귀를 일부러 넣어 실패하는 것을 확인했다: `registerSource` gate 제거, define 제거, 산출물의 합계 부호 조작.
 - **Vite는 export 조건을 `mode`가 아니라 `process.env.NODE_ENV`로 고른다** (`NODE_ENV=development vite build`와 같음).
   스크립트가 번들마다 NODE_ENV를 지정한다.
 - CI는 내장 `vp build` 대신 `vp run build`(스크립트)를 부른다: production 엔트리까지 만들어야 `size`가 돈다.

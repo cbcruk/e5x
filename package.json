@@ -42,7 +42,7 @@
     "check": "vp check",
     "docs:check": "node scripts/doccheck.ts",
     "size": "node scripts/size.ts",
-    "prepublishOnly": "pnpm test && pnpm build"
+    "prepublishOnly": "pnpm test && pnpm build && pnpm size"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
