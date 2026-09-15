@@ -38,6 +38,7 @@
     "test:watch": "vp test",
     "typecheck": "tsc --noEmit",
     "check": "vp check",
+    "docs:check": "node scripts/doccheck.ts",
     "prepublishOnly": "pnpm test && pnpm build"
   },
   "devDependencies": {

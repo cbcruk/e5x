@@ -1,29 +1,86 @@
+/**
+ * A reactive value you can read now and subscribe to.
+ *
+ * This is the Svelte store contract, so e5x atoms work with Svelte's `$store` and `derived`,
+ * and with `computed`. Collections, columns, aggregates, field atoms, and wrapped
+ * elements all implement it.
+ *
+ * @template T The value the atom holds.
+ */
 export interface ReadableAtom<T> {
+  /** Returns the current value. */
   get(): T
+  /**
+   * Calls `listener` with the current value immediately, then again whenever the value changes.
+   *
+   * @returns A function that stops the subscription. Nothing else releases it.
+   */
   subscribe(listener: (value: T) => void): () => void
 }
 
+/** The value types a schema leaf can coerce to: `'string'`, `'number'`, or `'boolean'`. */
 export type LeafType = 'string' | 'number' | 'boolean'
 
-// A bare leaf is stored as an attribute; `'<number>'` stores it as a child element's text.
-// Reads accept either storage; the marker decides what writes and `$push` create.
+/**
+ * Describes one scalar field in a schema and where it is stored.
+ *
+ * A bare type (`'number'`) is stored as an attribute; a bracketed type (`'<number>'`) is stored
+ * as a child element's text. Reads accept either storage; the marker decides what field writes
+ * and `$push` create.
+ */
 export type LeafDescriptor = LeafType | `<${LeafType}>`
 
+/** Describes one schema field: a {@linkcode LeafDescriptor}, or `[childSchema]` for a child collection. */
 export type FieldDescriptor = LeafDescriptor | readonly [NodeDescriptor]
 
+/**
+ * A schema: the shape of an element's fields, used for both runtime coercion and static types.
+ *
+ * @example Schema for a sales document
+ * ```ts
+ * import { wrap } from 'e5x'
+ *
+ * const schema = {
+ *   vendor: 'string',
+ *   item: [{ type: 'string', price: 'number', note: '<string>' }],
+ * } as const
+ *
+ * const sales = wrap(document.querySelector('sales')!, schema)
+ * const vendor: string = sales.vendor
+ * const firstPrice: number | undefined = sales.item[0]?.price
+ * ```
+ */
 export interface NodeDescriptor {
+  /** Maps a field name — a child element or attribute name — to its descriptor. */
   readonly [key: string]: FieldDescriptor
 }
 
+/** The order for {@linkcode Collection} `$sort` by field: ascending or descending. */
 export type SortDirection = 'asc' | 'desc'
 
-// Atoms a derived view depends on besides the DOM. The view recomputes when any of them changes.
+/**
+ * Atoms a derived view depends on besides the DOM under it.
+ *
+ * Pass them to a function `$where` or `$sort`: the view then recomputes, and notifies its
+ * subscribers, when any of them changes. Deps are compared with `Object.is` on every read, so
+ * scalar atoms keep the view memoized.
+ */
 export type Deps = readonly ReadableAtom<unknown>[]
 
-// `$`-prefixed names belong to the library, bare names to the data. The atom protocol
-// (`get` / `subscribe`) and JS coercion hooks are the only bare names the library claims.
+/**
+ * Field names a schema may not use, because the library claims them.
+ *
+ * `$`-prefixed names belong to the library and bare names to the data; the only bare names
+ * claimed are the atom protocol (`get`, `subscribe`) and the coercion hooks (`toString`,
+ * `valueOf`).
+ */
 export type ReservedName = 'get' | 'subscribe' | 'toString' | 'valueOf' | `$${string}`
 
+/**
+ * Checks a schema for reserved field names, turning each offending field into a readable type error.
+ *
+ * @template N The schema to check.
+ */
 export type ValidDescriptor<N> = {
   [K in keyof N]: K extends ReservedName
     ? `e5x: field name "${K & string}" is reserved`
@@ -72,79 +129,335 @@ type LeafKeys<N> = {
 
 type SortKey<N> = LeafKeys<N> & string
 
+/**
+ * The leaf fields of a schema with their value types, all optional — the shape of `$push` data and object predicates.
+ *
+ * @template N The schema.
+ */
 export type WritableFields<N> = Partial<{
   [K in LeafKeys<N>]: FieldValue<N[K]>
 }>
 
+/**
+ * A `$where` filter: field values to match exactly, or a function over wrapped elements.
+ *
+ * @template N The schema of the collection's members.
+ */
 export type Predicate<N> = WritableFields<N> | ((element: Wrapped<N>) => boolean)
 
+/** The escape hatches every wrapped element has, whatever its schema. */
 export interface WrappedBase {
+  /** The raw DOM element behind the proxy, for DOM APIs that reject proxies. */
   readonly $el: Element
+  /** Reads and writes attributes directly, even where a child element has the same name. */
   readonly $attr: Record<string, string | null>
+  /**
+   * Returns the live collection of descendants matching a selector — E4X's `..` axis.
+   *
+   * The result is always loose: schemas describe direct children only.
+   *
+   * @param name A tag name or any `querySelectorAll` selector.
+   */
   $deep(name: string): LooseCollection
 }
 
-// A wrapped element is itself an atom: it emits whenever anything in its subtree changes.
+/**
+ * The atom side of a wrapped element: the element itself and each of its fields.
+ *
+ * @template N The element's schema.
+ */
 interface ElementAtom<N> {
+  /**
+   * Mirrors the element's fields as atoms: leaves become {@linkcode ReadableAtom}s, child collections appear as themselves.
+   *
+   * @example Subscribe to one field
+   * ```ts
+   * import { wrap } from 'e5x'
+   *
+   * const sales = wrap(document.querySelector('sales')!, { vendor: 'string' } as const)
+   * sales.$.vendor.subscribe((vendor) => {
+   *   document.title = vendor
+   * })
+   * ```
+   *
+   * The listener runs only when `vendor` changes, not on other changes inside `<sales>`.
+   */
   readonly $: AtomFields<N>
+  /** Returns the wrapped element itself. */
   get(): Wrapped<N>
+  /**
+   * Calls `listener` with the element now and after every change anywhere in its subtree.
+   *
+   * This is coarse: a change to any descendant counts. Subscribe to `$.field` for one field.
+   *
+   * @returns A function that stops the subscription.
+   */
   subscribe(listener: (element: Wrapped<N>) => void): () => void
 }
 
+/**
+ * A DOM element wrapped with a schema: typed fields plus the {@linkcode WrappedBase} escape hatches and atom protocol.
+ *
+ * Leaf fields read as coerced values and write back to the DOM; child fields read as
+ * {@linkcode Collection}s.
+ *
+ * @template N The element's schema.
+ */
 export type Wrapped<N> = WrappedBase & ElementAtom<N> & ElementFields<N>
 
+/**
+ * The values of one field across a collection's members, with reactive aggregates.
+ *
+ * Indexing and iteration read the current values; the `$` members are atoms that update as
+ * the DOM changes.
+ *
+ * @template T The field's value type.
+ */
 export interface Column<T> {
+  /** The number of values, as an atom. */
   readonly $length: ReadableAtom<number>
+  /** The values as an array atom; each read and each subscriber gets its own copy. */
   readonly $values: ReadableAtom<T[]>
+  /** The sum of the values coerced with `Number`, as an atom; `0` when empty. */
   readonly $sum: ReadableAtom<number>
+  /** The mean of the values coerced with `Number`, as an atom; `NaN` when empty. */
   readonly $avg: ReadableAtom<number>
+  /** The smallest value, as an atom; `Infinity` when empty. */
   readonly $min: ReadableAtom<T>
+  /** The largest value, as an atom; `-Infinity` when empty. */
   readonly $max: ReadableAtom<T>
+  /** Returns a copy of the current values. */
   get(): T[]
+  /**
+   * Calls `listener` with the values now and whenever any of them changes.
+   *
+   * @returns A function that stops the subscription.
+   */
   subscribe(listener: (values: T[]) => void): () => void
+  /** The value of the member at this index, or `undefined` past the end. */
   readonly [index: number]: T
+  /** Iterates over the current values. */
   [Symbol.iterator](): Iterator<T>
 }
 
+/**
+ * The operations every typed collection has.
+ *
+ * @template N The schema of the collection's members.
+ */
 interface CollectionBase<N> {
+  /** The number of members, as an atom. */
   readonly $length: ReadableAtom<number>
+  /**
+   * Returns the live subset whose fields equal the given values.
+   *
+   * Values are compared after schema coercion. The object is copied, so mutating it later has
+   * no effect, and equal objects share one view.
+   *
+   * @example Filter by field values
+   * ```ts
+   * import { wrap } from 'e5x'
+   *
+   * const sales = wrap(document.querySelector('sales')!, {
+   *   item: [{ dept: 'string', organic: 'boolean', price: 'number' }],
+   * } as const)
+   *
+   * sales.item.$where({ dept: 'dairy', organic: true }).price.$sum.get()
+   * ```
+   */
   $where(predicate: WritableFields<N>): Collection<N>
+  /**
+   * Returns the live subset for which `predicate` returns `true`.
+   *
+   * The view recomputes when the DOM under the collection changes. A predicate that reads
+   * anything else must list it in `deps`, or it keeps serving results for the old value;
+   * development builds warn when that happens. A function shares its view only with the same
+   * function and the same deps.
+   *
+   * @param deps Atoms the predicate reads besides the member it receives.
+   *
+   * @example Filter by outside state
+   * ```ts
+   * import { wrap } from 'e5x'
+   *
+   * const filters = wrap(document.querySelector('filters')!, { min: 'number' } as const)
+   * const sales = wrap(document.querySelector('sales')!, { item: [{ price: 'number' }] } as const)
+   *
+   * const aboveMin = (item: { price: number }) => item.price >= filters.min
+   * const view = sales.item.$where(aboveMin, [filters.$.min])
+   *
+   * filters.min = 5
+   * view.price.$sum.get()
+   * ```
+   *
+   * Writing `filters.min` recomputes `view` and everything derived from it.
+   */
   $where(predicate: (element: Wrapped<N>) => boolean, deps?: Deps): Collection<N>
+  /**
+   * Returns the members as a live collection sorted by a leaf field.
+   *
+   * The schema decides the comparison: numbers compare numerically, strings lexically.
+   */
   $sort(field: SortKey<N>, direction?: SortDirection): Collection<N>
+  /**
+   * Returns the members as a live collection sorted by `comparator`.
+   *
+   * @param deps Atoms the comparator reads besides the two members; see the function form of `$where`.
+   *
+   * @example Sort by outside state
+   * ```ts
+   * import { wrap } from 'e5x'
+   *
+   * const filters = wrap(document.querySelector('filters')!, { direction: 'string' } as const)
+   * const sales = wrap(document.querySelector('sales')!, { item: [{ price: 'number' }] } as const)
+   *
+   * const byPrice = (a: { price: number }, b: { price: number }) =>
+   *   (a.price - b.price) * (filters.direction === 'desc' ? -1 : 1)
+   *
+   * const sorted = sales.item.$sort(byPrice, [filters.$.direction])
+   * ```
+   */
   $sort(comparator: (a: Wrapped<N>, b: Wrapped<N>) => number, deps?: Deps): Collection<N>
+  /**
+   * Returns the live collection of descendants of every member that match a selector.
+   *
+   * The result is always loose: schemas describe direct children only.
+   *
+   * @param name A tag name or any `querySelectorAll` selector.
+   */
   $deep(name: string): LooseCollection
+  /**
+   * Appends a new member built from `data` and returns it wrapped.
+   *
+   * Each value is written where the schema stores it: bare leaves as attributes, `'<type>'`
+   * leaves as child elements. Only collections of direct children can push.
+   *
+   * @throws {Error} When the collection is derived from something other than a parent's children.
+   *
+   * @example Push with child-element storage
+   * ```ts
+   * import { wrap } from 'e5x'
+   *
+   * const sales = wrap(document.querySelector('sales')!, {
+   *   item: [{ type: 'string', note: '<string>' }],
+   * } as const)
+   *
+   * sales.item.$push({ type: 'tofu', note: 'Fresh' })
+   * ```
+   *
+   * This appends `<item type="tofu"><note>Fresh</note></item>`.
+   */
   $push(data: WritableFields<N>): Wrapped<N>
+  /** Returns the current members, wrapped. */
   get(): Wrapped<N>[]
+  /**
+   * Calls `listener` with the members now and whenever membership or order changes.
+   *
+   * A value change inside a member does not count; subscribe to a column or to the member.
+   *
+   * @returns A function that stops the subscription.
+   */
   subscribe(listener: (value: Wrapped<N>[]) => void): () => void
-  // Writable only so `delete collection[i]` type-checks; TS cannot allow delete while
-  // forbidding assignment, and assigning an element here throws at runtime.
+  /**
+   * The member at this index, or `undefined` past the end; `delete collection[i]` removes it from the DOM.
+   *
+   * The signature is writable only so `delete` type-checks — TypeScript cannot allow `delete`
+   * while forbidding assignment — and assigning throws a `TypeError` at runtime.
+   */
   [index: number]: Wrapped<N>
+  /** Iterates over the current members, wrapped. */
   [Symbol.iterator](): Iterator<Wrapped<N>>
 }
 
+/**
+ * A live, typed set of elements: its members, the operations on it, and one {@linkcode Column} per leaf field.
+ *
+ * Collections are memoized per DOM version and shared: asking for the same path returns the
+ * same object.
+ *
+ * @template N The schema of the collection's members.
+ */
 export type Collection<N> = CollectionBase<N> & CollectionFields<N>
 
+/** A DOM element wrapped without a schema, where every field is untyped. */
 export interface LooseWrapped {
+  /** The raw DOM element behind the proxy, for DOM APIs that reject proxies. */
   readonly $el: Element
+  /** Reads and writes attributes directly, even where a child element has the same name. */
   readonly $attr: Record<string, string | null>
+  /** Mirrors the element's fields as atoms; names that currently have child elements appear as collections. */
   readonly $: Record<string, ReadableAtom<any>>
+  /**
+   * Returns the live collection of descendants matching a selector — E4X's `..` axis.
+   *
+   * @param name A tag name or any `querySelectorAll` selector.
+   */
   $deep(name: string): LooseCollection
+  /** Returns the wrapped element itself. */
   get(): LooseWrapped
+  /**
+   * Calls `listener` with the element now and after every change anywhere in its subtree.
+   *
+   * @returns A function that stops the subscription.
+   */
   subscribe(listener: (element: LooseWrapped) => void): () => void
+  /**
+   * Reads a child collection when children with that name exist, else the attribute value, else an empty collection.
+   *
+   * The empty collection is still an object, so it is truthy: test presence with `$length`.
+   * Assigning writes the first matching child's text, or the attribute.
+   */
   [key: string]: any
 }
 
+/** A live set of elements with no schema, where fields read as strings or collections. */
 export interface LooseCollection {
+  /** The number of members, as an atom. */
   readonly $length: ReadableAtom<number>
+  /** Returns the live subset whose attribute or child text equals `String(value)` for each entry. */
   $where(predicate: Record<string, unknown>): LooseCollection
+  /**
+   * Returns the live subset for which `predicate` returns `true`.
+   *
+   * @param deps Atoms the predicate reads besides the member it receives.
+   */
   $where(predicate: (element: LooseWrapped) => boolean, deps?: Deps): LooseCollection
+  /** Returns the members sorted by a field, compared as strings. */
   $sort(field: string, direction?: SortDirection): LooseCollection
+  /**
+   * Returns the members sorted by `comparator`.
+   *
+   * @param deps Atoms the comparator reads besides the two members.
+   */
   $sort(comparator: (a: LooseWrapped, b: LooseWrapped) => number, deps?: Deps): LooseCollection
+  /**
+   * Returns the live collection of descendants of every member that match a selector.
+   *
+   * @param name A tag name or any `querySelectorAll` selector.
+   */
   $deep(name: string): LooseCollection
+  /**
+   * Appends a new member with `data` written as attributes and returns it wrapped.
+   *
+   * @throws {Error} When the collection is derived from something other than a parent's children.
+   */
   $push(data: Record<string, unknown>): LooseWrapped
+  /** Returns the current members, wrapped. */
   get(): LooseWrapped[]
+  /**
+   * Calls `listener` with the members now and whenever membership or order changes.
+   *
+   * @returns A function that stops the subscription.
+   */
   subscribe(listener: (value: LooseWrapped[]) => void): () => void
+  /** The member at this index, or `undefined` past the end; `delete collection[i]` removes it from the DOM. */
   [index: number]: LooseWrapped
+  /** Iterates over the current members, wrapped. */
   [Symbol.iterator](): Iterator<LooseWrapped>
+  /**
+   * Reads a field across members: a child collection when members have such children, else a column of strings.
+   *
+   * Assigning writes the field on every member.
+   */
   [key: string]: any
 }

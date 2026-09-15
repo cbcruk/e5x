@@ -466,6 +466,8 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 - CI는 `voidzero-dev/setup-vp`(정확한 태그 고정 — 이동 태그 `v1`은 v1.15.0에서 동결됨).
 - 포맷: Oxfmt `semi: false`, `singleQuote`, `printWidth: 100` (`vite.config.ts`의 `fmt`). 일괄 포맷
   커밋은 `.git-blame-ignore-revs`에 등록. 포맷 전후 데모 번들 해시가 동일해 동작 무변경을 확인했다.
+- 문서: `.claude/rules/jsdoc.md` 규칙. `pnpm docs:check`(`scripts/doccheck.ts`)가 공개 심볼 JSDoc 누락,
+  엔트리 `@module` 누락을 잡고 모든 예제를 `e5x`/`e5x/jsx` import 모듈로 타입 체크한다. CI에서 실행.
 - 린트: `vp check`(Oxfmt + Oxlint)가 CI에서 tsc 앞에 돈다. `unicorn/no-useless-spread`는
   `reactive.ts`의 listener 스냅숏에서 **오탐** — 그 자리만 disable. 이 규칙의 `--fix`를 무심코
   적용하면 순회 중 구독 해제 버그가 생긴다.

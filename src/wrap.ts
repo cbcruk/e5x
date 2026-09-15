@@ -185,7 +185,47 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
   return proxy
 }
 
+/**
+ * Wraps a DOM element without a schema, so fields read as strings or collections.
+ *
+ * Loose mode is for exploring markup. A name that is neither a child element nor an attribute
+ * reads as an empty collection, as in E4X, so test presence with `$length`, not truthiness.
+ * Pass a schema to get typed, coerced fields.
+ *
+ * @example Explore markup
+ * ```ts
+ * import { wrap } from 'e5x'
+ *
+ * const todos = wrap(document.querySelector('todos')!)
+ * todos.todo.$push({ text: 'Write docs', done: false })
+ * const open = todos.todo.$where({ done: 'false' }).$length.get()
+ * ```
+ */
 export function wrap(element: Element): LooseWrapped
+/**
+ * Wraps a DOM element with a schema that types and coerces the fields it describes.
+ *
+ * The schema is the single source of truth for runtime coercion and static types. Wrapping the
+ * same element with the same schema object returns the same proxy, so define the schema once
+ * rather than inline in a loop.
+ *
+ * @template N The schema, inferred as a literal type.
+ * @param descriptor The schema. A reserved field name is a type error that names the field (see {@linkcode ValidDescriptor}).
+ * @throws {TypeError} When the schema uses a reserved field name.
+ *
+ * @example Typed access
+ * ```ts
+ * import { wrap } from 'e5x'
+ *
+ * const sales = wrap(document.querySelector('sales')!, {
+ *   vendor: 'string',
+ *   item: [{ type: 'string', price: 'number' }],
+ * } as const)
+ *
+ * const vendor: string = sales.vendor
+ * const total: number = sales.item.price.$sum.get()
+ * ```
+ */
 export function wrap<const N extends NodeDescriptor>(
   element: Element,
   descriptor: N extends ValidDescriptor<N> ? N : ValidDescriptor<N>,
