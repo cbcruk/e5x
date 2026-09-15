@@ -26,7 +26,8 @@ Conventions used below:
 - [Wrapped elements](#wrapped-elements): `Wrapped`, `LooseWrapped`, `$el`, `$attr`, `$`, `$deep`
 - [Collections](#collections): `Collection`, `LooseCollection`, `Predicate`, `WritableFields`,
   `SortDirection`, `$length`, `$where`, `$sort`, `$deep`, `$push`
-- [Columns](#columns): `Column`, `$length`, `$values`, `$sum`, `$avg`, `$min`, `$max`
+- [Columns](#columns): `Column`, `NumericColumn`, `$length`, `$values`, `$sum`, `$avg`, `$min`,
+  `$max`
 - [`e5x/jsx`](#e5xjsx): `h`, `Fragment`
 - [Development checks and production builds](#development-checks-and-production-builds)
 - [Design notes](#design-notes)
@@ -550,21 +551,57 @@ tofu.price = 4
 
 ### `Column<T>`
 
-The values of one leaf field across a collection's members. Index it for a value (`undefined` past
-the end), iterate it, `get()` a copy of the array, or `subscribe` for changes to any value.
-Its values cannot be assigned (`column[0] = x` is rejected); for a typed bulk write, iterate the members (see
-[Design notes](#design-notes)). A column coerces to its first value in string contexts.
+The values of one leaf field across a collection's members.
 
-**Type:** `type Column<T> = ColumnBase<T> & ([T] extends [string] ? unknown : ColumnArithmetic)`: `$length`, `$values`, `$min`, `$max`, `get`, `subscribe`, index and iteration on every column, plus `$sum` / `$avg` on number and boolean columns
+- Index it for a value (`undefined` past the end), iterate it, `get()` a copy of the array, or
+  `subscribe` for changes to any value.
+- Its values cannot be assigned: `column[0] = x` is rejected. For a typed bulk write, iterate the
+  members (see [Design notes](#design-notes)).
+- A column coerces to its first value in string contexts.
+- String fields give a `Column<string>`. Number and boolean fields give a `NumericColumn`, which
+  adds `$sum` and `$avg`. `Column<unknown>` accepts any column.
+
+**Type:** `interface Column<T> { $length; $values; $min; $max; get(): T[]; subscribe; readonly [index: number]: T }`
 
 ```ts
 import { wrap } from 'e5x'
 import type { Column } from 'e5x'
 
-const sales = wrap(document.querySelector('sales')!, { item: [{ price: 'number' }] } as const)
-const prices: Column<number> = sales.item.price
-const first = prices[0]
-for (const price of prices) console.log(price)
+const sales = wrap(document.querySelector('sales')!, {
+  item: [{ type: 'string', price: 'number' }],
+} as const)
+
+const types: Column<string> = sales.item.type
+const first = types[0]
+for (const type of types) console.log(type)
+
+function count(column: Column<unknown>): number {
+  return column.$length.get()
+}
+count(sales.item.price)
+```
+
+### `NumericColumn<T>`
+
+A column of numbers or booleans. It has everything a `Column` has, plus `$sum` and `$avg`. A boolean
+counts as `1` or `0`, so on a boolean column `$sum` is the number of `true` values and `$avg`
+their share. Use it to type generic helpers that aggregate.
+
+**Type:** `interface NumericColumn<T extends number | boolean> extends Column<T> { $sum; $avg }`
+
+```ts
+import { wrap } from 'e5x'
+import type { NumericColumn } from 'e5x'
+
+const sales = wrap(document.querySelector('sales')!, {
+  item: [{ price: 'number', organic: 'boolean' }],
+} as const)
+
+function mean<T extends number | boolean>(column: NumericColumn<T>): number {
+  return column.$avg.get()
+}
+const averagePrice = mean(sales.item.price)
+const organicShare = mean(sales.item.organic)
 ```
 
 ### `column.$length`
@@ -598,11 +635,13 @@ stop()
 
 ### `column.$sum`
 
-The sum of the values coerced with `Number`, as an atom. It is `0` when the column is empty. On a
-boolean column it counts the `true` values. Typed string columns do not have it: declare numeric
-fields as `'number'`. Loose columns are strings and keep it, and a non-numeric value makes it `NaN`.
+The sum of the values coerced with `Number`, as an atom, on a `NumericColumn`. It is `0` when the
+column is empty, and on a boolean column it counts the `true` values.
 
-**Type:** `readonly $sum: ReadableAtom<number>`
+- **Typed string columns** do not have it: declare numeric fields as `'number'`.
+- **Loose columns** hold strings and keep it; a non-numeric value makes it `NaN`.
+
+**Type:** `readonly $sum: ReadableAtom<number>` (on `NumericColumn<T>`)
 
 ```ts
 import { wrap } from 'e5x'
@@ -613,11 +652,11 @@ const units = sales.item.quantity.$sum.get()
 
 ### `column.$avg`
 
-The mean of the values coerced with `Number`, as an atom. It is `NaN` when the column is empty. On
-a boolean column it is the share of `true` values. Like `$sum`, typed string columns do not have
-it.
+The mean of the values coerced with `Number`, as an atom, on a `NumericColumn`. It is `NaN` when the
+column is empty, and on a boolean column it is the share of `true` values. Like `$sum`, typed string
+columns do not have it.
 
-**Type:** `readonly $avg: ReadableAtom<number>`
+**Type:** `readonly $avg: ReadableAtom<number>` (on `NumericColumn<T>`)
 
 ```ts
 import { wrap } from 'e5x'
@@ -754,4 +793,5 @@ the reason, or tracked as an issue.
   collections.
 - **Column aggregates on non-number columns** used to return values their types did not allow,
   such as `Infinity` from `$min` on an empty string column. _Fixed in #19:_ `$min` / `$max` are
-  `T | undefined` and `undefined` when empty, and typed string columns have no `$sum` / `$avg`.
+  `T | undefined` and `undefined` when empty. String fields give a `Column<string>` without
+  `$sum` / `$avg`, and number and boolean fields give a `NumericColumn` with them.

@@ -33,6 +33,7 @@ export type {
   Wrapped,
   Collection,
   Column,
+  NumericColumn,
   NodeDescriptor,
   FieldDescriptor,
   LeafDescriptor,

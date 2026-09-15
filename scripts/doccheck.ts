@@ -177,8 +177,8 @@ const memberPrefixes: Record<string, string> = {
   LooseWrapped: 'element',
   CollectionBase: 'collection',
   LooseCollection: 'collection',
-  ColumnBase: 'column',
-  ColumnArithmetic: 'column',
+  Column: 'column',
+  NumericColumn: 'column',
 }
 const required = new Set<string>()
 for (const file of Object.values(entries)) {

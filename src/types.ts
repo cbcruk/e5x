@@ -115,9 +115,14 @@ type AtomFields<N> = {
       : never
 }
 
+// A string leaf gets a plain column; number and boolean leaves also get `$sum` / `$avg`.
+type ColumnFor<F extends LeafDescriptor> = F extends 'string' | '<string>'
+  ? Column<string>
+  : NumericColumn<LeafValue<F> & (number | boolean)>
+
 type CollectionFields<N> = {
   -readonly [K in keyof N]: N[K] extends LeafDescriptor
-    ? Column<LeafValue<N[K]>>
+    ? ColumnFor<N[K]>
     : N[K] extends readonly [infer Child]
       ? Collection<Child>
       : never
@@ -206,18 +211,26 @@ interface ElementAtom<N> {
 export type Wrapped<N> = WrappedBase & ElementAtom<N> & ElementFields<N>
 
 /**
- * What every column has, whatever its value type.
+ * The values of one field across a collection's members, with the aggregates every column has.
+ *
+ * Indexing and iteration read the current values; the `$` members are atoms that update as the
+ * DOM changes. `Column<unknown>` accepts any column. Number and boolean fields are
+ * {@linkcode NumericColumn}s, which add `$sum` and `$avg`.
  *
  * @template T The field's value type.
  */
-interface ColumnBase<T> {
+export interface Column<T> {
   /** The number of values, as an atom. */
   readonly $length: ReadableAtom<number>
   /** The values as an array atom; each read and each subscriber gets its own copy. */
   readonly $values: ReadableAtom<T[]>
-  /** The smallest value, as an atom (strings compare lexically, `false` before `true`); `undefined` when empty. */
+  /**
+   * The smallest value, as an atom; `undefined` when the column is empty.
+   *
+   * Strings compare lexically, and `false` sorts before `true`.
+   */
   readonly $min: ReadableAtom<T | undefined>
-  /** The largest value, as an atom; `undefined` when empty. */
+  /** The largest value, as an atom; `undefined` when the column is empty. */
   readonly $max: ReadableAtom<T | undefined>
   /** Returns a copy of the current values. */
   get(): T[]
@@ -233,23 +246,19 @@ interface ColumnBase<T> {
   [Symbol.iterator](): Iterator<T>
 }
 
-/** The arithmetic aggregates of a number or boolean column; a boolean counts as `1` or `0`. */
-interface ColumnArithmetic {
-  /** The sum of the values coerced with `Number`, as an atom; `0` when empty. On a boolean column, the count of `true`. */
-  readonly $sum: ReadableAtom<number>
-  /** The mean of the values coerced with `Number`, as an atom; `NaN` when empty. On a boolean column, the share of `true`. */
-  readonly $avg: ReadableAtom<number>
-}
-
 /**
- * The values of one field across a collection's members, with reactive aggregates.
+ * A {@linkcode Column} of numbers or booleans, which adds `$sum` and `$avg`.
  *
- * Indexing and iteration read the current values; the `$` members are atoms that update as
- * the DOM changes. String columns have no `$sum` or `$avg`: declare numeric fields as `'number'`.
+ * Booleans count as `1` and `0`, so `$sum` is the number of `true` values and `$avg` their share.
  *
  * @template T The field's value type.
  */
-export type Column<T> = ColumnBase<T> & ([T] extends [string] ? unknown : ColumnArithmetic)
+export interface NumericColumn<T extends number | boolean> extends Column<T> {
+  /** The sum of the values coerced with `Number`, as an atom; `0` when the column is empty. */
+  readonly $sum: ReadableAtom<number>
+  /** The mean of the values coerced with `Number`, as an atom; `NaN` when the column is empty. */
+  readonly $avg: ReadableAtom<number>
+}
 
 /**
  * The operations every typed collection has.

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vite-plus/test'
 import { wrap } from '../src/index'
+import type { Column, NumericColumn } from '../src/index'
 
 const schema = {
   row: [{ name: 'string', dept: 'string', amount: 'number', active: 'boolean' }],
@@ -84,6 +85,26 @@ describe('column aggregates', () => {
     expect([min, strictMin, activeSum]).toEqual([10, 10, 2])
     // The runtime keeps it: loose columns are strings and are summed as numbers.
     expect(nameSum).toBeDefined()
+  })
+
+  it('types columns for generic code and child-text leaves', () => {
+    document.body.innerHTML = '<notes><note><text>a</text><score>2</score></note></notes>'
+    const notes = wrap(document.body.firstElementChild!, {
+      note: [{ text: '<string>', score: '<number>' }],
+    } as const)
+    const anyColumn: Column<unknown> = notes.note.text
+    const total = <T extends number>(column: NumericColumn<T>): number => column.$sum.get()
+    // @ts-expect-error: child-text string columns have no $sum either
+    const textSum = notes.note.text.$sum
+    expect([anyColumn.$length.get(), total(notes.note.score), textSum === undefined]).toEqual([
+      1,
+      2,
+      false,
+    ])
+
+    // Loose columns are untyped; an empty one still reports undefined.
+    const loose = wrap(document.body.firstElementChild!)
+    expect(loose.note.$where({ text: 'none' }).score.$min.get()).toBeUndefined()
   })
 })
 
