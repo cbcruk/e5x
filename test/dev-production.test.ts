@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vite-plus/test'
 
-// Node only (not in the Chromium project): `DEV` is read from `process.env.NODE_ENV` once,
-// when `src/dev.ts` loads, and this test needs a fresh copy of the whole module graph. Browser
-// mode keeps modules cached across `vi.resetModules()`, so the import below would reuse the
-// development build. Real production bundles replace the expression at build time instead.
+// Node only (not in the Chromium project), for two reasons. `DEV` is read from
+// `process.env.NODE_ENV` once, when `src/dev.ts` loads, so the test needs a fresh copy of the
+// whole module graph, and browser mode keeps modules cached across `vi.resetModules()`. Browser
+// mode also replaces `process.env.NODE_ENV` with "test" when it transforms a file, and
+// `vi.stubEnv` does not change that, so even a fresh graph would read "test". Real production
+// bundles replace the expression at build time instead.
 
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
 

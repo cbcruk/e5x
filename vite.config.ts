@@ -18,6 +18,7 @@ export default defineConfig({
       // Fast default run: every suite in happy-dom.
       { extends: true, test: { name: 'happy-dom', environment: 'happy-dom' } },
       // The suites that exercise MutationObserver delivery, rerun in headless Chromium.
+      // Listed by hand: add any new suite that depends on observer behaviour.
       {
         extends: true,
         test: {
