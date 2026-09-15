@@ -66,7 +66,7 @@ bindText($('#statAvg'), view.price.$avg, money)
 bindText(
   $('#statRange'),
   computed([view.price.$min, view.price.$max], (min, max) =>
-    Number.isFinite(min) ? `${money(min)}–${money(max).slice(1)}` : '–',
+    min === undefined || max === undefined ? '–' : `${money(min)}–${money(max).slice(1)}`,
   ),
 )
 bindText(

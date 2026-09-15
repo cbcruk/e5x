@@ -26,7 +26,8 @@ Conventions used below:
 - [Wrapped elements](#wrapped-elements): `Wrapped`, `LooseWrapped`, `$el`, `$attr`, `$`, `$deep`
 - [Collections](#collections): `Collection`, `LooseCollection`, `Predicate`, `WritableFields`,
   `SortDirection`, `$length`, `$where`, `$sort`, `$deep`, `$push`
-- [Columns](#columns): `Column`, `$length`, `$values`, `$sum`, `$avg`, `$min`, `$max`
+- [Columns](#columns): `Column`, `NumericColumn`, `$length`, `$values`, `$sum`, `$avg`, `$min`,
+  `$max`
 - [`e5x/jsx`](#e5xjsx): `h`, `Fragment`
 - [Development checks and production builds](#development-checks-and-production-builds)
 - [Design notes](#design-notes)
@@ -550,21 +551,57 @@ tofu.price = 4
 
 ### `Column<T>`
 
-The values of one leaf field across a collection's members. Index it for a value (`undefined` past
-the end), iterate it, `get()` a copy of the array, or `subscribe` for changes to any value.
-Its values cannot be assigned (`column[0] = x` is rejected); for a typed bulk write, iterate the members (see
-[Design notes](#design-notes)). A column coerces to its first value in string contexts.
+The values of one leaf field across a collection's members.
 
-**Type:** `interface Column<T> { $length; $values; $sum; $avg; $min; $max; get(): T[]; subscribe; readonly [index: number]: T }`
+- Index it for a value (`undefined` past the end), iterate it, `get()` a copy of the array, or
+  `subscribe` for changes to any value.
+- Its values cannot be assigned: `column[0] = x` is rejected. For a typed bulk write, iterate the
+  members (see [Design notes](#design-notes)).
+- A column coerces to its first value in string contexts.
+- String fields give a `Column<string>`. Number and boolean fields give a `NumericColumn`, which
+  adds `$sum` and `$avg`. `Column<unknown>` accepts any column.
+
+**Type:** `interface Column<T> { $length; $values; $min; $max; get(): T[]; subscribe; readonly [index: number]: T }`
 
 ```ts
 import { wrap } from 'e5x'
 import type { Column } from 'e5x'
 
-const sales = wrap(document.querySelector('sales')!, { item: [{ price: 'number' }] } as const)
-const prices: Column<number> = sales.item.price
-const first = prices[0]
-for (const price of prices) console.log(price)
+const sales = wrap(document.querySelector('sales')!, {
+  item: [{ type: 'string', price: 'number' }],
+} as const)
+
+const types: Column<string> = sales.item.type
+const first = types[0]
+for (const type of types) console.log(type)
+
+function count(column: Column<unknown>): number {
+  return column.$length.get()
+}
+count(sales.item.price)
+```
+
+### `NumericColumn<T>`
+
+A column of numbers or booleans. It has everything a `Column` has, plus `$sum` and `$avg`. A boolean
+counts as `1` or `0`, so on a boolean column `$sum` is the number of `true` values and `$avg`
+their share. Use it to type generic helpers that aggregate.
+
+**Type:** `interface NumericColumn<T extends number | boolean> extends Column<T> { $sum; $avg }`
+
+```ts
+import { wrap } from 'e5x'
+import type { NumericColumn } from 'e5x'
+
+const sales = wrap(document.querySelector('sales')!, {
+  item: [{ price: 'number', organic: 'boolean' }],
+} as const)
+
+function mean<T extends number | boolean>(column: NumericColumn<T>): number {
+  return column.$avg.get()
+}
+const averagePrice = mean(sales.item.price)
+const organicShare = mean(sales.item.organic)
 ```
 
 ### `column.$length`
@@ -598,10 +635,13 @@ stop()
 
 ### `column.$sum`
 
-The sum of the values coerced with `Number`, as an atom. It is `0` when the column is empty, and
-`NaN` for non-numeric strings (#19).
+The sum of the values coerced with `Number`, as an atom, on a `NumericColumn`. It is `0` when the
+column is empty, and on a boolean column it counts the `true` values.
 
-**Type:** `readonly $sum: ReadableAtom<number>`
+- **Typed string columns** do not have it: declare numeric fields as `'number'`.
+- **Loose columns** hold strings and keep it; a non-numeric value makes it `NaN`.
+
+**Type:** `readonly $sum: ReadableAtom<number>` (on `NumericColumn<T>`)
 
 ```ts
 import { wrap } from 'e5x'
@@ -612,9 +652,11 @@ const units = sales.item.quantity.$sum.get()
 
 ### `column.$avg`
 
-The mean of the values coerced with `Number`, as an atom. It is `NaN` when the column is empty.
+The mean of the values coerced with `Number`, as an atom, on a `NumericColumn`. It is `NaN` when the
+column is empty, and on a boolean column it is the share of `true` values. Like `$sum`, typed string
+columns do not have it.
 
-**Type:** `readonly $avg: ReadableAtom<number>`
+**Type:** `readonly $avg: ReadableAtom<number>` (on `NumericColumn<T>`)
 
 ```ts
 import { wrap } from 'e5x'
@@ -626,30 +668,32 @@ stop()
 
 ### `column.$min`
 
-The smallest value, as an atom; strings compare lexically. It is `Infinity` when the column is
-empty, even for a string column (#19).
+The smallest value, as an atom. Strings compare lexically, and `false` sorts before `true`. It is
+`undefined` when the column is empty.
 
-**Type:** `readonly $min: ReadableAtom<T>`
+**Type:** `readonly $min: ReadableAtom<T | undefined>`
 
 ```ts
 import { wrap } from 'e5x'
 
 const sales = wrap(document.querySelector('sales')!, { item: [{ price: 'number' }] } as const)
 const cheapest = sales.item.price.$min.get()
+const label = cheapest === undefined ? 'no items' : `from ${cheapest}`
 ```
 
 ### `column.$max`
 
-The largest value, as an atom. It is `-Infinity` when the column is empty, even for a string
-column (#19).
+The largest value, as an atom. It is `undefined` when the column is empty.
 
-**Type:** `readonly $max: ReadableAtom<T>`
+**Type:** `readonly $max: ReadableAtom<T | undefined>`
 
 ```ts
 import { computed, wrap } from 'e5x'
 
 const sales = wrap(document.querySelector('sales')!, { item: [{ price: 'number' }] } as const)
-const range = computed([sales.item.price.$min, sales.item.price.$max], (min, max) => max - min)
+const range = computed([sales.item.price.$min, sales.item.price.$max], (min, max) =>
+  min === undefined || max === undefined ? 0 : max - min,
+)
 ```
 
 ## `e5x/jsx`
@@ -744,8 +788,6 @@ the reason, or tracked as an issue.
   data's way: `album.track.length` is a data column, and `album.track.$length.get()` is the member
   count.
 - **A typed bulk write must iterate** (`for (const row of rows) row.active = false`).
-  _TypeScript limitation._ `rows.active` reads as `Column<boolean>`, and a mapped type cannot give
+  _TypeScript limitation._ `rows.active` reads as `NumericColumn<boolean>`, and a mapped type cannot give
   the same property a different write type. The runtime accepts the assignment, and so do loose
   collections.
-- **Column aggregates on non-number columns** return values their types do not allow, such as
-  `Infinity` from `$min` on an empty string column. _Issue:_ #19.

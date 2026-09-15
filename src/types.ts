@@ -115,9 +115,14 @@ type AtomFields<N> = {
       : never
 }
 
+// A string leaf gets a plain column; number and boolean leaves also get `$sum` / `$avg`.
+type ColumnFor<F extends LeafDescriptor> = F extends 'string' | '<string>'
+  ? Column<string>
+  : NumericColumn<LeafValue<F> & (number | boolean)>
+
 type CollectionFields<N> = {
   -readonly [K in keyof N]: N[K] extends LeafDescriptor
-    ? Column<LeafValue<N[K]>>
+    ? ColumnFor<N[K]>
     : N[K] extends readonly [infer Child]
       ? Collection<Child>
       : never
@@ -206,10 +211,11 @@ interface ElementAtom<N> {
 export type Wrapped<N> = WrappedBase & ElementAtom<N> & ElementFields<N>
 
 /**
- * The values of one field across a collection's members, with reactive aggregates.
+ * The values of one field across a collection's members, with the aggregates every column has.
  *
- * Indexing and iteration read the current values; the `$` members are atoms that update as
- * the DOM changes.
+ * Indexing and iteration read the current values; the `$` members are atoms that update as the
+ * DOM changes. `Column<unknown>` accepts any column. Number and boolean fields are
+ * {@linkcode NumericColumn}s, which add `$sum` and `$avg`.
  *
  * @template T The field's value type.
  */
@@ -218,14 +224,14 @@ export interface Column<T> {
   readonly $length: ReadableAtom<number>
   /** The values as an array atom; each read and each subscriber gets its own copy. */
   readonly $values: ReadableAtom<T[]>
-  /** The sum of the values coerced with `Number`, as an atom; `0` when empty. */
-  readonly $sum: ReadableAtom<number>
-  /** The mean of the values coerced with `Number`, as an atom; `NaN` when empty. */
-  readonly $avg: ReadableAtom<number>
-  /** The smallest value, as an atom; `Infinity` when empty. */
-  readonly $min: ReadableAtom<T>
-  /** The largest value, as an atom; `-Infinity` when empty. */
-  readonly $max: ReadableAtom<T>
+  /**
+   * The smallest value, as an atom; `undefined` when the column is empty.
+   *
+   * Strings compare lexically, and `false` sorts before `true`.
+   */
+  readonly $min: ReadableAtom<T | undefined>
+  /** The largest value, as an atom; `undefined` when the column is empty. */
+  readonly $max: ReadableAtom<T | undefined>
   /** Returns a copy of the current values. */
   get(): T[]
   /**
@@ -238,6 +244,20 @@ export interface Column<T> {
   readonly [index: number]: T
   /** Iterates over the current values. */
   [Symbol.iterator](): Iterator<T>
+}
+
+/**
+ * A {@linkcode Column} of numbers or booleans, which adds `$sum` and `$avg`.
+ *
+ * Booleans count as `1` and `0`, so `$sum` is the number of `true` values and `$avg` their share.
+ *
+ * @template T The field's value type.
+ */
+export interface NumericColumn<T extends number | boolean> extends Column<T> {
+  /** The sum of the values coerced with `Number`, as an atom; `0` when the column is empty. */
+  readonly $sum: ReadableAtom<number>
+  /** The mean of the values coerced with `Number`, as an atom; `NaN` when the column is empty. */
+  readonly $avg: ReadableAtom<number>
 }
 
 /**

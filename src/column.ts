@@ -1,9 +1,11 @@
 import { derived, memo, type Inputs } from './reactive'
 import { registerSource } from './dev'
 import { fromDom, readRaw } from './coerce'
-import type { Column, LeafDescriptor, ReadableAtom } from './types'
+import type { Column, LeafDescriptor, NumericColumn, ReadableAtom } from './types'
 
 type Leaf = string | number | boolean
+// What createColumn builds: a column of any leaf, with the numeric aggregates too.
+type LeafColumn = Column<Leaf> & Pick<NumericColumn<number>, '$sum' | '$avg'>
 
 interface ColumnConfig {
   root: Node
@@ -20,9 +22,9 @@ function shallowEqual(a: readonly unknown[], b: readonly unknown[]): boolean {
   return a.every((value, index) => Object.is(value, b[index]))
 }
 
-function extreme(values: Leaf[], direction: 1 | -1): Leaf {
+function extreme(values: Leaf[], direction: 1 | -1): Leaf | undefined {
   if (values.length === 0) {
-    return direction === 1 ? -Infinity : Infinity
+    return undefined
   }
   return values.reduce((best, value) => {
     const order = value > best ? 1 : value < best ? -1 : 0
@@ -33,10 +35,13 @@ function extreme(values: Leaf[], direction: 1 | -1): Leaf {
 /**
  * Creates the {@linkcode Column} of one leaf field over the members `config.compute` returns.
  *
+ * Every column gets `$sum` and `$avg` at runtime, typed string ones included, because loose
+ * columns hold numeric strings; the types offer them only on {@linkcode NumericColumn}s.
+ *
  * Values are memoized per DOM version and inputs. Scalar aggregates are shared atoms; array-valued
  * reads (`get`, `$values`, `subscribe`) hand each caller its own copy so no one can corrupt the cache.
  */
-export function createColumn(config: ColumnConfig): Column<Leaf> {
+export function createColumn(config: ColumnConfig): LeafColumn {
   const { root, field, type, compute, inputs } = config
   const values = memo(
     root,
@@ -104,7 +109,7 @@ export function createColumn(config: ColumnConfig): Column<Leaf> {
     deleteProperty() {
       return false
     },
-  }) as unknown as Column<Leaf>
+  }) as unknown as LeafColumn
   registerSource(column, root)
   return column
 }

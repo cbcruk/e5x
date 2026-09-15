@@ -568,6 +568,14 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   - 의도된 것: `$sort` 둘째 인자(필드=방향, 함수=deps), 객체 predicate는 deps 없음, loose `$.name`의 atom/collection
     판정, loose에서도 `get`/`subscribe` 예약, sync `length` 없음, typed bulk write는 반복(TS 한계).
   - 이슈로 뺀 것: #19 Column 집계 타입 구멍(빈 string column의 `$min`이 `Infinity`, string `$sum`/`$avg`는 NaN).
+    → **해결(사용자 결정)**: `$min`/`$max`는 모든 타입에서 `T | undefined`, 비면 `undefined`(number의 `±Infinity`
+    폐기). `Column<T>`(모든 column 공통, `Column<unknown>` = 아무 column)와 `NumericColumn<T extends number | boolean>`
+    (`$sum`/`$avg` 추가)로 나누고, collection 필드가 leaf 서술자로 둘 중 하나를 고른다. boolean은 numeric(true 개수·비율).
+    런타임은 모든 column에 `$sum`/`$avg`를 둔다: loose column은 문자열이라 합산이 흔하다. 데모의 `Number.isFinite`
+    우회가 `undefined` 검사로 바뀜.
+    - 처음엔 조건부 타입 `ColumnBase<T> & ([T] extends [string] ? unknown : ColumnArithmetic)`이었다. 리뷰어가
+      제네릭에서 깨짐을 찾음: `Column<string>`이 `Column<unknown>`에 안 들어가고, `<T extends number>(c: Column<T>)`
+      안에서 `$sum`이 없음(조건부가 지연됨). 사용자 결정으로 interface 분리.
   - 이번에 고친 것: `e5x/jsx`의 `<>…</>`가 **타입 체크를 통과하지 못했다**(TS가 fragment props를 `{}`로 줌).
     `Fragment`의 props를 `object | null`로 넓히고 tsx 테스트 추가. 레퍼런스 예제를 타입 체크하다 발견.
   - 문서화 중 확인한 사실: `$where`/`$sort` 뷰에서도 `$push`가 동작한다(부모에 추가, 뷰 조건과 무관). `$deep`과
@@ -635,6 +643,7 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 | #16 | #2   | 1회차 0 / 4, 2회차 3 / 2, 3회차 0 / 2 | 1회차 3 (+1은 사용자 확인 → 수정 결정), 2회차 5, 3회차 1 (+1 거절) | 0    | 3         | 1회차: 누수 6가지를 더 넣어 검출력 확인, `cachedDeps` retention 재현. 2회차: 수정 코드의 회귀 2개(회수된 dep ref가 `undefined`와 같음, 강한 cell 등록부의 무한 retention)를 Chromium 프로브와 heap 측정으로 잡음. 둘 다 기존 테스트를 통과하던 버그. 3회차: 수정 확인(heap 차이가 뷰 수와 무관하게 약 0.35MB), CLAUDE.md 낡은 기록 지적 |
 | #18 | #3   | 1회차 0 / 5, 2회차 0 / 3              | 1회차 5, 2회차 3                                                   | 1    | 2         | 오탐 1: 1회차의 "production 엔트리에 `registerSource` 등 이름 없음" 확인은 lib 출력 mangle 때문에 무의미했음(작성자가 발견, 2회차가 확인). 2회차는 smoke의 경고 부재 검사가 앞선 NODE_ENV에 기대 우연히 성립함을 찾음. 3회차 생략(수정이 작고 회귀 주입으로 확인)                                                                       |
 | #20 | #4   | 1회차 1 / 4, 2회차 0 / 1              | 1회차 5, 2회차 1                                                   | 0    | 2         | 리뷰어가 문서 주장 20가지를 실행으로 검증해 부정확한 설명 3곳을 찾았고, 레퍼런스 검사가 조용히 비는 경로(인터페이스 이름 변경·base 이동·type literal)를 차례로 재현함. 작성자는 예제 타입 체크로 `Fragment` 타입 버그를 찾음                                                                                                            |
+| #22 | #19  | 1회차 0 / 3, 2회차 0 / 3              | 1회차 2 (+1은 사용자 결정 → interface 분리), 2회차 3               | 0    | 2         | 1회차가 조건부 타입이 제네릭에서 깨지는 3가지를 찾아 설계가 바뀜(작성자가 `tsc`로 재현 후 결정 요청). 2회차는 `dist` d.ts로 descriptor별 정확한 타입·대입 가능성을 검증하고 타입 고정 테스트 공백을 지적                                                                                                                                |
 
 ## 알려진 약점 (정직하게)
 

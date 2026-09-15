@@ -20,7 +20,7 @@ sales.item.$where({ type: 'carrot' })[0]!.price // 3  (typed: number)
 sales.item.$length.get() // 3
 
 // a column over the whole set, with reactive aggregates
-sales.item.price // Column<number>
+sales.item.price // NumericColumn<number>
 sales.item.price.$sum.get() // 10
 sales.item.$sort('price', 'desc') // live ordered collection
 
@@ -52,7 +52,8 @@ at that empty seat, with a reactivity layer E4X never had.
   child element text, `[childDescriptor]` for child collections. It drives both runtime coercion and
   static types. Without a schema, `wrap(element)` runs in loose mode (everything is a string).
 - **element field → scalar** (`row[0].amount` → `number`); **collection field → Column**
-  (`rows.amount` → `Column<number>` with `$sum / $avg / $min / $max / $values / $length`).
+  (`rows.amount` → `NumericColumn<number>` with `$sum / $avg / $min / $max / $values / $length`;
+  string fields give a `Column<string>`, without `$sum` / `$avg`).
 - A single `MutationObserver` drives every live set; subtrees that a mutation does not touch
   are skipped.
 - Reads are memoized per DOM version: holding a view and indexing into it is O(1) per read
