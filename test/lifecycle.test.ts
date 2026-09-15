@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vite-plus/test'
+import { describe, it, expect, vi } from 'vite-plus/test'
 import { computed, wrap } from '../src/index'
 import { weakCache } from '../src/cache'
+import { heldCellCount, memo } from '../src/reactive'
 
 // Chromium only, started with `--js-flags=--expose-gc`. happy-dom's MutationObserver keeps
 // every observed node reachable until `disconnect()`, which browsers do not, so in happy-dom
@@ -124,6 +125,32 @@ function removeFromDep(): HeldViews {
   return { element: new WeakRef(element), lengths: [view.$length] }
 }
 
+function readAndDropMemos(node: Element): WeakRef<object> {
+  let last: object = {}
+  for (let i = 0; i < 20; i++) {
+    last = memo(node, () => ({ members: Array.from(node.children) }))()
+  }
+  return new WeakRef(last)
+}
+
+// A dep store whose object value is cleared; only the store's closure held the object.
+function clearObjectDep(): { old: WeakRef<object>; length: { get(): number } } {
+  const { sales } = ledger()
+  let state: { min: number } | undefined = { min: 2 }
+  const store = {
+    get: () => state,
+    subscribe: (listener: (value: typeof state) => void) => {
+      listener(state)
+      return () => {}
+    },
+  }
+  const view = sales.item.$where((item) => item.price >= (state?.min ?? 0), [store])
+  view.$length.get()
+  const old = new WeakRef(state)
+  state = undefined
+  return { old, length: view.$length }
+}
+
 function observeDetachedTree(): WeakRef<object> {
   const list = document.createElement('list')
   list.innerHTML = '<entry></entry>'
@@ -164,6 +191,20 @@ describe('cached views', () => {
     }
   })
 
+  // Results are registered per node to be released at the next mutation; the registry must not
+  // be what keeps them alive when no mutation comes.
+  it('let their results go with them, with no mutation afterwards', async () => {
+    const { sales } = ledger()
+    const root = sales.$el
+    expect(await collected(readAndDropMemos(root))).toBe(true)
+    // Finalization also clears the registry entries, so dropped views do not pile up.
+    for (let i = 0; i < 20 && heldCellCount(root) > 0; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      gc()
+    }
+    expect(heldCellCount(root)).toBe(0)
+  })
+
   it('drop the cache entry after the view is collected', async () => {
     const cache = weakCache<object>()
     const fill = (): WeakRef<object> => new WeakRef(cache.get('key', () => ({})))
@@ -198,6 +239,19 @@ describe('removed elements', () => {
     const { element, lengths } = removeFromDep()
     expect(await collected(element)).toBe(true)
     expect(lengths[0]!.get()).toBe(0)
+  })
+})
+
+describe('dep values', () => {
+  // Deps are remembered weakly. A collected object must never compare equal to the current value,
+  // including when that value is `undefined`, which is what a collected ref dereferences to.
+  it('still invalidate a held view after the old object is collected', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { old, length } = clearObjectDep()
+    expect(await collected(old)).toBe(true)
+    expect(length.get()).toBe(2)
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
   })
 })
 

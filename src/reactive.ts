@@ -12,9 +12,18 @@ const listenersByNode = new Map<Node, Set<Listener>>()
 const dirty = new Set<Node>()
 // Cached values per observed node, released when a mutation bumps the node's version. A bump
 // invalidates them anyway; releasing them at once means a view nobody reads again does not keep
-// removed elements alive. Cells are plain objects, not closures, so a registered cell does not
-// keep the view that owns it alive.
-const cellsByNode = new WeakMap<Node, Set<Cell<unknown>>>()
+// removed elements alive. The registry holds cells weakly: only the memo that owns a cell keeps
+// it, so a dropped view's result goes with the view even if no mutation ever comes.
+const cellsByNode = new WeakMap<Node, Set<WeakRef<Cell<unknown>>>>()
+// Removes the registry entry of a collected cell, so views created and dropped between
+// mutations do not pile up dead refs. The held value names the node weakly: a registry keeps
+// held values alive, and a strong node would keep the node's proxy, its memos, and so the cell.
+const cellRegistry = new FinalizationRegistry<{ node: WeakRef<Node>; ref: WeakRef<Cell<unknown>> }>(
+  ({ node, ref }) => {
+    const target = node.deref()
+    if (target) cellsByNode.get(target)?.delete(ref)
+  },
+)
 let observer: MutationObserver | null = null
 let notifyScheduled = false
 
@@ -46,7 +55,10 @@ function ingest(records: MutationRecord[]): void {
         versions.set(node, version + 1)
         const cells = cellsByNode.get(node)
         if (cells) {
-          for (const cell of cells) release(cell)
+          for (const ref of cells) {
+            const cell = ref.deref()
+            if (cell) release(cell)
+          }
           cellsByNode.delete(node)
         }
         if (listenersByNode.has(node)) {
@@ -98,11 +110,13 @@ export interface Cell<T> {
   version: number
   /** The deps' values the value was computed with, objects held weakly. */
   deps: unknown[]
+  /** The weak reference the per-node registry holds, created on the cell's first registration. */
+  ref: WeakRef<Cell<T>> | null
 }
 
 /** Creates an empty {@linkcode Cell}. */
 export function cell<T>(): Cell<T> {
-  return { value: undefined, version: -1, deps: [] }
+  return { value: undefined, version: -1, deps: [], ref: null }
 }
 
 function release(cell: Cell<unknown>): void {
@@ -117,16 +131,26 @@ function release(cell: Cell<unknown>): void {
  * Call it after each computation that fills the cell; a released cell must be registered again.
  */
 export function holdUntilMutation(node: Node, cell: Cell<unknown>): void {
+  if (!cell.ref) {
+    cell.ref = new WeakRef(cell)
+    cellRegistry.register(cell, { node: new WeakRef(node), ref: cell.ref })
+  }
   let cells = cellsByNode.get(node)
   if (!cells) {
     cells = new Set()
     cellsByNode.set(node, cells)
   }
-  cells.add(cell)
+  cells.add(cell.ref)
+}
+
+/** Counts the cells registered for release at the next mutation under `node`, collected ones included; for tests. */
+export function heldCellCount(node: Node): number {
+  return cellsByNode.get(node)?.size ?? 0
 }
 
 // Dep values are remembered only to compare with `Object.is`. An object is held weakly: once it
-// is collected, no current value can be the same object, so the comparison fails as it should.
+// is collected, no current value can be the same object, so the comparison must fail — even
+// against `undefined`, which is what a collected ref dereferences to.
 class Weak {
   constructor(readonly ref: WeakRef<object>) {}
 }
@@ -138,9 +162,11 @@ function remember(value: unknown): unknown {
 }
 
 function same(remembered: unknown, value: unknown): boolean {
-  return remembered instanceof Weak
-    ? remembered.ref.deref() === value
-    : Object.is(remembered, value)
+  if (remembered instanceof Weak) {
+    const target = remembered.ref.deref()
+    return target !== undefined && target === value
+  }
+  return Object.is(remembered, value)
 }
 
 /**
@@ -187,8 +213,10 @@ export function memo<T>(node: Node, compute: () => T, inputs: Inputs = NO_INPUTS
       holdUntilMutation(node, cached)
       return value
     }
+    // Read first: a check reruns a user function, which could write and release this cell.
+    const hit = cached.value as T
     for (const check of inputs.checks) check()
-    return cached.value as T
+    return hit
   }
 }
 
