@@ -360,6 +360,35 @@ Column이 아니라 Collection을 반환했다(타입은 Column). 이제 schema�
 
 비용: gzip 2.95 → 3.42kB.
 
+## Phase 9: 데모 재작성 — sales ledger (`pnpm dev`, `test/demo-smoke.test.ts`)
+
+이전 데모(데이터 테이블)는 수동 `refresh()`로 그렸고 subscribe는 한 곳뿐이었다. 지금은
+**UI의 모든 반영이 e5x 구독**이고, 막힌 곳은 우회를 숨기지 않고 주석으로 남겼다.
+
+- 모델: E4X canonical `sales` (attribute + `<note>` child text), 서버 렌더 마크업이 seed,
+  JSX 리터럴(`demo/seed.tsx`)로 항목 추가.
+- 표: `view.subscribe` → 행, `view.price.subscribe` 등 → 셀. 편집/`delete view[i]`/반복 bulk
+  write/`$push`. 필터·정렬은 새 뷰를 만든다(뷰는 DOM에만 의존).
+- 통계: `$length`, `quantity.$sum`, `price.$avg/$min/$max`, `$deep('note').$length`.
+- dept 막대: `sales.item.$where({ dept })`가 표 필터와 **같은 객체**임을 하이라이트로 보임.
+- 외부 쓰기: `setAttribute`/`textNode.data`/`remove()`/JSX append — e5x 밖에서 써도 반영.
+- 모델 패널: 직렬화된 `<sales>` 트리.
+- 테스트는 셀렉터 확인이 아니라 데모를 **실제로 조작**하는 7개 시나리오. 헤드리스 Chromium
+  스크린샷으로 데스크톱/400px/다크 모드 확인.
+
+**데모가 드러낸 API 공백** (다음 결정 후보):
+
+1. **원소 자신의 필드에 atom 없음**: `sales.vendor`는 plain string이라 구독 불가 → 헤더와
+   모델 패널은 플랫폼 MutationObserver로 우회.
+2. **atom 간 조합 없음**: 재고 가치(price × quantity), 가격 범위(min + max) → 데모 `combine` 헬퍼.
+   nanostores `computed` 영역이지만 최소 get/subscribe shape와의 호환은 미확인.
+3. **행/셀 분리 비용**: collection `subscribe`는 멤버십/순서만 알리므로 셀 갱신에 필드별 Column
+   구독 6개가 필요. 동작하지만 장황함.
+4. **외부 상태를 읽는 함수 predicate가 조용히 틀린다**: identity 공유 + DOM 전용 memo 때문에
+   `state.search`를 읽는 predicate를 끌어올리면 옛 결과가 계속 나온다. 상태마다 새 함수 필요.
+   문서화만 됨 — dev 경고나 API 차원 해법 검토 가치 있음.
+5. `$push`는 attribute만 써서 `<note>` 같은 child text 필드를 만들 수 없다 (추가 폼에서 note 제외).
+
 ## 알려진 약점 (정직하게)
 
 - bulk write read/write 비대칭 → typed에선 iteration 강제.
@@ -381,3 +410,4 @@ Column이 아니라 Collection을 반환했다(타입은 Column). 이제 schema�
 - 패키징(.d.ts, exports map, vite-plugin-dts) → npm publish 여부 결정
 - E4X 연산자 문법 커스텀 파서 (진짜 transpiler) — 큰 결정, 수요 확인 후
 - 대량 데이터 인덱싱 (selector→set 역색인) — 실측 병목 나오면
+- Phase 9 데모가 드러낸 API 공백 1~5
