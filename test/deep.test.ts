@@ -99,6 +99,33 @@ describe('$deep with a leaf type', () => {
   })
 })
 
+describe('$deep on derived views', () => {
+  it('inherits deps and gives collections leaf columns', async () => {
+    document.body.innerHTML = `
+      <filters min="2"></filters>
+      <catalog>
+        <aisle rank="1"><item price="3"></item><price>7</price></aisle>
+        <aisle rank="2"><item price="5"></item><price>8</price></aisle>
+      </catalog>`
+    const filters = wrap(document.querySelector('filters')!, { min: 'number' } as const)
+    const root = wrap(document.querySelector('catalog')!, { aisle: [{ rank: 'number' }] } as const)
+    const ranked = root.aisle.$where((aisle) => aisle.rank >= filters.min, [filters.$.min])
+
+    const items = ranked.$deep('item', { price: 'number' } as const)
+    const prices = ranked.$deep('price', 'number')
+    const seen: number[][] = []
+    items.price.$sum.subscribe((sum) => seen.push([sum, prices.$sum.get()]))
+
+    filters.min = 1
+    await flush()
+
+    expect(seen).toEqual([
+      [5, 8],
+      [8, 15],
+    ])
+  })
+})
+
 describe('$deep without a shape', () => {
   it('stays loose', () => {
     const root = wrap(catalog(), { aisle: [{ name: 'string' }] } as const)

@@ -82,6 +82,8 @@ function subscribeElement(): WeakRef<object> {
   return new WeakRef(element)
 }
 
+const deepSchema = { type: 'string' } as const
+
 function readUnheldViews(): WeakRef<object>[] {
   const { sales } = ledger()
   const byPrice = (a: { price: number }, b: { price: number }): number => a.price - b.price
@@ -91,6 +93,10 @@ function readUnheldViews(): WeakRef<object>[] {
     sales.item.$sort(byPrice),
     sales.$deep('item'),
     sales.item.$deep('note'),
+    sales.$deep('item', deepSchema),
+    sales.item.$deep('note', deepSchema),
+    sales.$deep('item', 'string'),
+    sales.item.$where({ type: 'a' }).$deep('note', 'number'),
   ]
   for (const view of views) view.$length.get()
   return views.map((view) => new WeakRef(view))

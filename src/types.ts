@@ -168,7 +168,8 @@ export interface WrappedBase {
    * Returns the live collection of descendants that match a selector, typed and coerced by `schema`.
    *
    * The members are not children of one parent, so the collection cannot `$push`. Views are
-   * shared per name and schema object: define the schema once.
+   * shared per name and schema object, and each descendant you index or iterate keeps the schema
+   * object alive while that element lives: define the schema once, not inline in a loop.
    *
    * @template D The descendants' schema, inferred as a literal type.
    * @param name A tag name or any `querySelectorAll` selector.
@@ -178,8 +179,9 @@ export interface WrappedBase {
    * ```ts
    * import { wrap } from 'e5x'
    *
+   * const itemSchema = { type: 'string', price: 'number' } as const
    * const doc = wrap(document.querySelector('catalog')!)
-   * const items = doc.$deep('item', { type: 'string', price: 'number' } as const)
+   * const items = doc.$deep('item', itemSchema)
    * const total: number = items.price.$sum.get()
    * ```
    */
@@ -383,7 +385,8 @@ interface CollectionBase<N> {
    * Returns the live collection of every member's descendants that match a selector, typed and coerced by `schema`.
    *
    * The members are not children of one parent, so the collection cannot `$push`. Views are
-   * shared per name and schema object: define the schema once.
+   * shared per name and schema object, and each descendant you index or iterate keeps the schema
+   * object alive while that element lives: define the schema once, not inline in a loop.
    *
    * @template D The descendants' schema, inferred as a literal type.
    * @param name A tag name or any `querySelectorAll` selector.
@@ -393,8 +396,9 @@ interface CollectionBase<N> {
    * ```ts
    * import { wrap } from 'e5x'
    *
+   * const itemSchema = { type: 'string', price: 'number' } as const
    * const doc = wrap(document.querySelector('catalog')!)
-   * const items = doc.$deep('item', { type: 'string', price: 'number' } as const)
+   * const items = doc.$deep('item', itemSchema)
    * const total: number = items.price.$sum.get()
    * ```
    */
@@ -485,7 +489,8 @@ export interface LooseWrapped {
    * Returns the live collection of descendants that match a selector, typed and coerced by `schema`.
    *
    * The members are not children of one parent, so the collection cannot `$push`. Views are
-   * shared per name and schema object: define the schema once.
+   * shared per name and schema object, and each descendant you index or iterate keeps the schema
+   * object alive while that element lives: define the schema once, not inline in a loop.
    *
    * @template D The descendants' schema, inferred as a literal type.
    * @param name A tag name or any `querySelectorAll` selector.
@@ -495,8 +500,9 @@ export interface LooseWrapped {
    * ```ts
    * import { wrap } from 'e5x'
    *
+   * const itemSchema = { type: 'string', price: 'number' } as const
    * const doc = wrap(document.querySelector('catalog')!)
-   * const items = doc.$deep('item', { type: 'string', price: 'number' } as const)
+   * const items = doc.$deep('item', itemSchema)
    * const total: number = items.price.$sum.get()
    * ```
    */
@@ -563,7 +569,8 @@ export interface LooseCollection {
    * Returns the live collection of every member's descendants that match a selector, typed and coerced by `schema`.
    *
    * The members are not children of one parent, so the collection cannot `$push`. Views are
-   * shared per name and schema object: define the schema once.
+   * shared per name and schema object, and each descendant you index or iterate keeps the schema
+   * object alive while that element lives: define the schema once, not inline in a loop.
    *
    * @template D The descendants' schema, inferred as a literal type.
    * @param name A tag name or any `querySelectorAll` selector.
@@ -573,8 +580,9 @@ export interface LooseCollection {
    * ```ts
    * import { wrap } from 'e5x'
    *
+   * const itemSchema = { type: 'string', price: 'number' } as const
    * const doc = wrap(document.querySelector('catalog')!)
-   * const items = doc.$deep('item', { type: 'string', price: 'number' } as const)
+   * const items = doc.$deep('item', itemSchema)
    * const total: number = items.price.$sum.get()
    * ```
    */

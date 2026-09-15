@@ -592,6 +592,8 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   `$deep`을 만든다. 캐시는 loose·leaf는 문자열 키 `weakCache`, schema는 `WeakMap<schema, weakCache>`(schema 객체 identity).
   schema는 `assertValidDescriptor`로 검증, leaf는 세 타입 외 `TypeError`(`'<number>'` 포함 — child text 표시는 의미 없음).
 - Column 설정의 `field`를 `read(element)` 함수로 바꿔 필드 읽기와 자기 text 읽기를 같은 경로로.
+- inline schema 주의: `wrapNode`가 요소별 `Map<schema, proxy>`를 강하게 잡아, 인덱싱·반복한 descendant마다 그 schema
+  객체가 요소 수명 동안 남는다(리뷰어가 GC로 확인). 문서·예제는 schema를 한 번 정의하도록 씀.
 - 이슈는 "Conditional on #12"(dogfooding 후 결정) 마일스톤이었으나 사용자가 먼저 진행하기로 함.
 
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (2026-09 채택)
@@ -655,6 +657,7 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 | #18 | #3   | 1회차 0 / 5, 2회차 0 / 3              | 1회차 5, 2회차 3                                                   | 1    | 2         | 오탐 1: 1회차의 "production 엔트리에 `registerSource` 등 이름 없음" 확인은 lib 출력 mangle 때문에 무의미했음(작성자가 발견, 2회차가 확인). 2회차는 smoke의 경고 부재 검사가 앞선 NODE_ENV에 기대 우연히 성립함을 찾음. 3회차 생략(수정이 작고 회귀 주입으로 확인)                                                                       |
 | #20 | #4   | 1회차 1 / 4, 2회차 0 / 1              | 1회차 5, 2회차 1                                                   | 0    | 2         | 리뷰어가 문서 주장 20가지를 실행으로 검증해 부정확한 설명 3곳을 찾았고, 레퍼런스 검사가 조용히 비는 경로(인터페이스 이름 변경·base 이동·type literal)를 차례로 재현함. 작성자는 예제 타입 체크로 `Fragment` 타입 버그를 찾음                                                                                                            |
 | #22 | #19  | 1회차 0 / 3, 2회차 0 / 3              | 1회차 2 (+1은 사용자 결정 → interface 분리), 2회차 3               | 0    | 2         | 1회차가 조건부 타입이 제네릭에서 깨지는 3가지를 찾아 설계가 바뀜(작성자가 `tsc`로 재현 후 결정 요청). 2회차는 `dist` d.ts로 descriptor별 정확한 타입·대입 가능성을 검증하고 타입 고정 테스트 공백을 지적                                                                                                                                |
+| #23 | #10  | 0 / 3                                 | 3                                                                  | 0    | 1         | 리뷰어가 deps·dev 체크·GC가 새 `$deep` 뷰까지 닿는지 프로브로 확인하고 테스트 공백, inline schema retention(요소별 proxy 캐시), 문서 타입 오기를 지적                                                                                                                                                                                   |
 
 ## 알려진 약점 (정직하게)
 
