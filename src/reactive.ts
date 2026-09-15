@@ -76,17 +76,29 @@ function version(node: Node): number {
   return versions.get(node)!
 }
 
-// What a derived value depends on besides its node's subtree, plus the development checks
-// to run when it serves a cached result. Both flow down a path to everything derived from it.
+/**
+ * What a derived value depends on besides its node's subtree, plus the development checks to run when it serves a cached result.
+ *
+ * Both flow down a path to everything derived from it.
+ */
 export interface Inputs {
+  /** Atoms the value depends on besides the DOM under its node. */
   readonly deps: Deps
+  /** Development checks to run whenever a cached value is served. */
   readonly checks: readonly (() => void)[]
 }
 
+/** {@linkcode Inputs} with no deps and no checks, for values that depend on the DOM alone. */
 export const NO_INPUTS: Inputs = { deps: [], checks: [] }
 
-// Valid while the node's version is unchanged and every dep still returns the same value.
-// Deps are pulled on read, so a held view is correct without anyone subscribing.
+/**
+ * Wraps a computation so it reruns only when the node's subtree or a dep changes.
+ *
+ * The cached value stays valid while the node's version is unchanged and every dep returns an
+ * `Object.is`-equal value. Deps are pulled on read, so a held view is correct without anyone
+ * subscribing. Pending mutation records are taken first, so a read right after a synchronous
+ * write is never stale. On a cache hit the inputs' checks run.
+ */
 export function memo<T>(node: Node, compute: () => T, inputs: Inputs = NO_INPUTS): () => T {
   let cachedVersion = -1
   let cachedDeps: unknown[] = []
@@ -105,6 +117,13 @@ export function memo<T>(node: Node, compute: () => T, inputs: Inputs = NO_INPUTS
   }
 }
 
+/**
+ * Calls `listener` after mutations that change the version of `node`'s subtree.
+ *
+ * Delivery is batched per microtask and indexed by node, so mutations elsewhere do not wake it.
+ *
+ * @returns A function that stops watching.
+ */
 export function watch(node: Node, listener: (version: number) => void): () => void {
   let seen = version(node)
   const onMutation = (): void => {
@@ -129,6 +148,7 @@ export function watch(node: Node, listener: (version: number) => void): () => vo
   }
 }
 
+/** Reports whether two element lists hold the same elements in the same order. */
 export function sameElements(a: Element[], b: Element[]): boolean {
   if (a.length !== b.length) {
     return false
@@ -136,6 +156,12 @@ export function sameElements(a: Element[], b: Element[]): boolean {
   return a.every((element, index) => element === b[index])
 }
 
+/**
+ * Creates a memoized {@linkcode ReadableAtom} over a node's subtree and inputs.
+ *
+ * Subscribers are notified when the DOM under `node` or a dep changes and the new value differs
+ * by `isEqual`. The atom is registered as a subtree source for the development deps check.
+ */
 export function derived<T>(
   node: Node,
   compute: () => T,

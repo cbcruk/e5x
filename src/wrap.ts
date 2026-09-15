@@ -66,6 +66,13 @@ function descendants(element: Element, name: string): LooseCollection {
   })
 }
 
+/**
+ * Returns the stable proxy for an element wrapped with a schema, creating it on first use.
+ *
+ * Proxies are cached per element and schema object. Unlike {@linkcode wrap}, this does not
+ * validate the schema; internal callers pass child schemas that were validated with their parent,
+ * or `null` for loose mode.
+ */
 export function wrapNode(element: Element, descriptor: NodeDescriptor | null): any {
   let byDescriptor = cache.get(element)
   if (!byDescriptor) {

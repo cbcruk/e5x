@@ -101,8 +101,9 @@ In this repo that check is `pnpm docs:check` (`scripts/doccheck.ts`, run by
 Node with the TypeScript compiler API). It fails when an entry file lacks a
 `@module` comment, when a symbol reachable from an entry point has no JSDoc
 block — exports, plus the interfaces their types are built from and every
-member of those interfaces — and it type-checks every code block in that
-documentation as its own module that imports from `e5x` / `e5x/jsx`. An example
+member of those interfaces, and every module-level export under `src/` — and it
+type-checks every code block in the public documentation as its own module that
+imports from `e5x` / `e5x/jsx`. An example
 missing its `import` therefore fails the build rather than merely reading badly.
 CI runs it on every push.
 
@@ -124,6 +125,13 @@ supports them before use:
 - The public types live in `src/types.ts`. Internal interfaces that surface
   through exported aliases (`CollectionBase`, `ElementAtom`, `WrappedBase`) are
   documented like exports, members included.
+- "Every exported symbol" includes internal modules: every module-level
+  `export` under `src/` (and each member of an exported interface) gets JSDoc,
+  so maintainers get the same tooltips. Internal symbols need no `@example` —
+  they cannot be imported by the package name, so examples could not be
+  type-checked — and internal files need no `@module`.
+- A comment explaining a non-exported helper, or one line of an
+  implementation, stays a `//` comment.
 - This repo has no JSR renderer, so avoid the renderer-dependent syntax above.
   Keep `@example` titles short — they read as a plain line in editor tooltips.
 - `@template` is the tag to use for type parameters.

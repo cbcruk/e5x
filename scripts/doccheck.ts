@@ -1,10 +1,12 @@
 /**
- * Checks the public API documentation of both package entry points.
+ * Checks the JSDoc of the package: the public API of both entry points and every internal export.
  *
- * Fails when an entry file lacks a `@module` comment, when a symbol reachable from an entry
- * point (exports, plus interfaces those types are built from, and their members) has no JSDoc
- * block, or when a code block in that documentation does not type-check as its own module
- * importing from `e5x` / `e5x/jsx`. Run with `pnpm docs:check`.
+ * Fails when an entry file lacks a `@module` comment; when a symbol reachable from an entry point
+ * (exports, plus interfaces those types are built from, and their members) or any module-level
+ * export under `src/` (and the members of exported interfaces) has no JSDoc block; or when a code
+ * block in the public documentation does not type-check as its own module importing from
+ * `e5x` / `e5x/jsx`. Internal documentation is not scanned for examples, because internal
+ * modules cannot be imported by the package name. Run with `pnpm docs:check`.
  *
  * @module
  */
@@ -39,13 +41,18 @@ function collectExamples(comment: string, at: string): void {
   }
 }
 
-function requireDoc(node: ts.Node, name: string): void {
+const checked = new Set<ts.Node>()
+
+function requireDoc(node: ts.Node, name: string, publicApi: boolean): void {
+  if (checked.has(node)) return
+  checked.add(node)
   const docs = ts.getJSDocCommentsAndTags(node).filter(ts.isJSDoc)
   if (docs.length === 0) {
     problems.push(`${where(node)}  ${name}: missing JSDoc`)
     return
   }
   documented += 1
+  if (!publicApi) return
   for (const doc of docs) {
     collectExamples(doc.getFullText(), `${where(node)} ${name}`)
   }
@@ -58,7 +65,8 @@ function isPackageSource(node: ts.Node): boolean {
 
 // Interfaces surface through type aliases (`Collection<N> = CollectionBase<N> & …`), so follow
 // type references inside alias bodies to the interfaces declared in the package.
-const interfaces = new Set<ts.InterfaceDeclaration>()
+// Interface declaration → whether it belongs to the public API (whose examples are checked).
+const interfaces = new Map<ts.InterfaceDeclaration, boolean>()
 const visitedAliases = new Set<ts.TypeAliasDeclaration>()
 
 function followTypes(node: ts.Node): void {
@@ -67,7 +75,7 @@ function followTypes(node: ts.Node): void {
     if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol)
     for (const decl of symbol?.declarations ?? []) {
       if (!isPackageSource(decl)) continue
-      if (ts.isInterfaceDeclaration(decl)) interfaces.add(decl)
+      if (ts.isInterfaceDeclaration(decl)) interfaces.set(decl, true)
       if (ts.isTypeAliasDeclaration(decl) && !visitedAliases.has(decl)) {
         visitedAliases.add(decl)
         followTypes(decl.type)
@@ -96,21 +104,60 @@ for (const [specifier, file] of Object.entries(entries)) {
     for (const decl of declarations) {
       // Overloads carry the docs; the implementation signature is not visible to callers.
       if (ts.isFunctionDeclaration(decl) && decl.body && declarations.length > 1) continue
-      requireDoc(decl, `${specifier} ${exported.name}`)
-      if (ts.isInterfaceDeclaration(decl)) interfaces.add(decl)
+      requireDoc(decl, `${specifier} ${exported.name}`, true)
+      if (ts.isInterfaceDeclaration(decl)) interfaces.set(decl, true)
       if (ts.isTypeAliasDeclaration(decl)) followTypes(decl.type)
     }
   }
 }
 
-for (const decl of interfaces) {
+// Internal modules: every module-level export is documented too, so maintainers get the same
+// tooltips. Overload implementations are skipped, as for the public API.
+function isExported(statement: ts.Statement): boolean {
+  return (
+    ts.canHaveModifiers(statement) &&
+    (ts.getModifiers(statement) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
+  )
+}
+
+for (const sf of program.getSourceFiles()) {
+  if (!sf.fileName.startsWith(path.join(root, 'src') + path.sep)) continue
+  const file = path.relative(root, sf.fileName)
+  for (const statement of sf.statements) {
+    if (!isExported(statement)) continue
+    if (ts.isVariableStatement(statement)) {
+      const names = statement.declarationList.declarations.map((d) => d.name.getText())
+      requireDoc(statement, `${file} ${names.join(', ')}`, false)
+      continue
+    }
+    if (
+      !ts.isFunctionDeclaration(statement) &&
+      !ts.isInterfaceDeclaration(statement) &&
+      !ts.isTypeAliasDeclaration(statement) &&
+      !ts.isClassDeclaration(statement)
+    ) {
+      continue
+    }
+    const name = statement.name?.text ?? 'default'
+    if (ts.isFunctionDeclaration(statement) && statement.body && statement.name) {
+      const overloads = checker.getSymbolAtLocation(statement.name)?.declarations ?? []
+      if (overloads.length > 1) continue
+    }
+    requireDoc(statement, `${file} ${name}`, false)
+    if (ts.isInterfaceDeclaration(statement) && !interfaces.has(statement)) {
+      interfaces.set(statement, false)
+    }
+  }
+}
+
+for (const [decl, publicApi] of interfaces) {
   const name = decl.name.text
-  if (!ts.getJSDocCommentsAndTags(decl).some(ts.isJSDoc)) requireDoc(decl, name)
+  requireDoc(decl, name, publicApi)
   for (const member of decl.members) {
     const memberName = member.name
       ? member.name.getText()
       : `[${member.kind === ts.SyntaxKind.IndexSignature ? 'index' : 'call'}]`
-    requireDoc(member, `${name}.${memberName}`)
+    requireDoc(member, `${name}.${memberName}`, publicApi)
   }
 }
 

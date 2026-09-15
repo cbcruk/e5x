@@ -58,6 +58,14 @@ function isIndex(key: string): number | null {
   return Number.isInteger(index) && index >= 0 ? index : null
 }
 
+/**
+ * Creates a live collection over the elements `config.compute` returns.
+ *
+ * Members are memoized per DOM version and inputs. Derived views (`$where`, `$sort`, `$deep`,
+ * fields) are cached, so asking for the same path returns the same object, and they inherit this
+ * collection's deps and development checks. A `config.label` marks a view built from a user
+ * function and enables the development deps checks for it.
+ */
 export function createCollection(config: CollectionConfig): LooseCollection {
   const { root, owner, tagName, descriptor } = config
   const parent = config.inputs ?? NO_INPUTS

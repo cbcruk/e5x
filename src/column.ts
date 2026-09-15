@@ -30,6 +30,12 @@ function extreme(values: Leaf[], direction: 1 | -1): Leaf {
   })
 }
 
+/**
+ * Creates the {@linkcode Column} of one leaf field over the members `config.compute` returns.
+ *
+ * Values are memoized per DOM version and inputs. Scalar aggregates are shared atoms; array-valued
+ * reads (`get`, `$values`, `subscribe`) hand each caller its own copy so no one can corrupt the cache.
+ */
 export function createColumn(config: ColumnConfig): Column<Leaf> {
   const { root, field, type, compute, inputs } = config
   const values = memo(
