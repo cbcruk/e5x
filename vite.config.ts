@@ -29,7 +29,8 @@ export default defineConfig(({ mode }) => ({
           name: 'happy-dom',
           environment: 'happy-dom',
           // Garbage collection tests: happy-dom's MutationObserver keeps observed nodes alive.
-          exclude: [...configDefaults.exclude, 'test/lifecycle.test.ts'],
+          // The feed reader: happy-dom's XML parser drops namespaced elements and CDATA text.
+          exclude: [...configDefaults.exclude, 'test/lifecycle.test.ts', 'test/reader.test.ts'],
         },
       },
       // Headless Chromium: the suites that exercise MutationObserver delivery (also run in
@@ -47,6 +48,7 @@ export default defineConfig(({ mode }) => ({
             'test/demo-smoke.test.ts',
             'test/lifecycle.test.ts',
             'test/deep.test.ts',
+            'test/reader.test.ts',
           ],
           browser: {
             enabled: true,

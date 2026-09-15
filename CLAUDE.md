@@ -596,6 +596,17 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   객체가 요소 수명 동안 남는다(리뷰어가 GC로 확인). 문서·예제는 schema를 한 번 정의하도록 씀.
 - 이슈는 "Conditional on #12"(dogfooding 후 결정) 마일스톤이었으나 사용자가 먼저 진행하기로 함.
 
+## Dogfooding: RSS/Atom 리더 (2026-09, #5) — `apps/reader/`
+
+- 선택: 사용자가 실제 구독하는 피드(RSS 2.0, WordPress)를 읽는 로컬 리더. TodoMVC 대체안은 "매일 쓰는가"에 답을 못 줘서
+  기각. 구독 목록은 gitignore된 `apps/reader/feeds.local.json`, 저장소에는 가상 샘플만(실제 기사 미커밋).
+- 구조: 피드 XML 문서가 모델(`DOMParser` → `wrap`). 읽음·별표는 entry 요소의 attribute, localStorage는 미러.
+  `pnpm reader` = Vite dev 서버 + `/api/feed` 프록시(구독 목록에 있는 URL만, 열린 프록시 방지). 링크는 http(s)만 href.
+- 테스트 `test/reader.test.ts`는 **Chromium 전용**: happy-dom `DOMParser`가 실제 피드의 `channel`·`dc:creator`·CDATA를 잃음.
+- 마찰 기록은 `apps/reader/FRICTION.md`. 첫 빌드에서 나온 것: `atom:link`가 `link`를 가림(namespace 무시), 두 포맷
+  어댑터, 문서 간 collection 합치기 없음, 새로고침 시 문서 통째 교체. 좋았던 것: element atom으로 영속화, CDATA·`dc:` 읽기.
+- #5는 이 앱을 **실제로 사용한 뒤** 기록을 요약해 닫는다(첫 PR은 `Part of #5`).
+
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (2026-09 채택)
 
 ```

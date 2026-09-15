@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"
+	xmlns:content="http://purl.org/rss/1.0/modules/content/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	xmlns:atom="http://www.w3.org/2005/Atom"
+	xmlns:media="http://search.yahoo.com/mrss/">
+<!-- Synthetic sample in the shape of a WordPress feed: namespaces, atom:link before link, CDATA, repeated categories. -->
+<channel>
+	<title>Sample Music Blog</title>
+	<atom:link href="https://example.com/feed/" rel="self" type="application/rss+xml" />
+	<link>https://example.com/</link>
+	<description>A synthetic feed for the e5x reader.</description>
+	<lastBuildDate>Tue, 15 Sep 2026 03:00:00 +0000</lastBuildDate>
+	<item>
+		<title>Band Announces Tour &amp; New Album</title>
+		<link>https://example.com/2001/band-announces-tour/news/</link>
+		<dc:creator><![CDATA[Alex Writer]]></dc:creator>
+		<pubDate>Tue, 15 Sep 2026 02:40:00 +0000</pubDate>
+		<category><![CDATA[News]]></category>
+		<category><![CDATA[Tours]]></category>
+		<guid isPermaLink="false">https://example.com/?p=2001</guid>
+		<description><![CDATA[<p>The band will play <em>twelve</em> cities this fall.</p>]]></description>
+		<media:content url="https://example.com/images/2001.jpg" medium="image" />
+	</item>
+	<item>
+		<title>Premiere: Quiet Song</title>
+		<link>https://example.com/2002/premiere-quiet-song/music/</link>
+		<dc:creator><![CDATA[Sam Critic]]></dc:creator>
+		<pubDate>Mon, 14 Sep 2026 18:05:00 +0000</pubDate>
+		<category><![CDATA[Music]]></category>
+		<category><![CDATA[Premieres]]></category>
+		<guid isPermaLink="false">https://example.com/?p=2002</guid>
+		<description><![CDATA[<p>A first listen to a quiet song.</p>]]></description>
+	</item>
+	<item>
+		<title>Album Of The Week</title>
+		<link>https://example.com/2003/album-of-the-week/reviews/</link>
+		<dc:creator><![CDATA[Alex Writer]]></dc:creator>
+		<pubDate>Mon, 14 Sep 2026 09:30:00 +0000</pubDate>
+		<category><![CDATA[Reviews]]></category>
+		<guid isPermaLink="false">https://example.com/?p=2003</guid>
+		<description><![CDATA[<p>Our pick for the week, with <a href="https://example.com">a link</a>.</p>]]></description>
+	</item>
+</channel>
+</rss>

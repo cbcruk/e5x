@@ -35,6 +35,7 @@
     "dev": "vp dev",
     "build": "tsc --noEmit && vp build && vp build --mode production-entry",
     "build:demo": "vp build --config vite.demo.config.ts",
+    "reader": "vp dev --config apps/reader/vite.config.ts",
     "test": "vp test run --project happy-dom",
     "test:browser": "vp test run --project chromium",
     "test:watch": "vp test --project happy-dom",
