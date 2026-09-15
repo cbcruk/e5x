@@ -6,3 +6,6 @@ dist
 *.tgz
 ECMA-357.pdf
 demo-dist
+# Vitest browser mode failure screenshots
+test/__screenshots__
+.vitest-attachments

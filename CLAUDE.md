@@ -475,6 +475,22 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   `reactive.ts`의 listener 스냅숏에서 **오탐** — 그 자리만 disable. 이 규칙의 `--fix`를 무심코
   적용하면 순회 중 구독 해제 버그가 생긴다.
 
+## 실제 브라우저 테스트 (2026-09, #1)
+
+- Vitest `projects` 두 개: `happy-dom`(전체, `pnpm test`, 기본)과 `chromium`(observer를 쓰는 5개 suite,
+  `pnpm test:browser`, Playwright provider + headless shell). `vp test`를 스크립트 없이 부르면 둘 다 돈다.
+- CI는 `browser` 잡을 `check`와 병렬로 돌린다. Pages는 CI 워크플로 전체 성공에 걸려 있어 둘 중 하나만
+  깨져도 배포 안 됨.
+- 의존성: `@vitest/browser-playwright`는 vite-plus의 vitest 버전(4.1.11)에 **정확히 고정**, `playwright`도
+  정확한 버전 고정(릴리스 경과 시간 충족 확인, exclude 자동 추가 없음).
+- 첫 실행에서 드러난 환경 차이는 라이브러리 동작이 아니라 **테스트 인프라**였다:
+  - 브라우저 모드에서 `vi.resetModules()`는 모듈을 다시 실행하지 않는다. 데모 smoke 테스트는 테스트마다
+    `../demo/main.ts?run=N`을 import해 두 환경 모두에서 데모 스크립트를 새로 실행한다(`@vite-ignore` 필요).
+  - production 스위치 테스트는 `src/dev.ts` 모듈 그래프 전체를 다시 불러와야 해서 Node 전용
+    `test/dev-production.test.ts`로 분리. 실제 production 경로는 빌드 치환이라 브라우저에서 볼 대상이 아니다.
+- 코어 동작(MO 전달, `takeRecords()`, `characterData`, detached/shadow root 관찰)은 Chromium과 happy-dom이
+  같은 결과를 냈다.
+
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (실험, 2026-09~)
 
 ```
