@@ -1,6 +1,7 @@
 import { createCollection } from './collection';
 import { weakCache } from './cache';
 import { derived, watch } from './reactive';
+import { DEV, noteRead, registerSource } from './dev';
 import {
   assertValidDescriptor,
   childrenNamed,
@@ -25,8 +26,13 @@ const cache = new WeakMap<Element, Map<NodeDescriptor | null, object>>();
 
 function attributeView(element: Element): Record<string, string | null> {
   return new Proxy({} as Record<string, string | null>, {
-    get: (_target, key) =>
-      typeof key === 'string' ? element.getAttribute(key) : undefined,
+    get: (_target, key) => {
+      if (typeof key !== 'string') {
+        return undefined;
+      }
+      if (DEV) noteRead(element, key);
+      return element.getAttribute(key);
+    },
     set: (_target, key, value) => {
       if (typeof key === 'string') {
         element.setAttribute(key, toDom(value));
@@ -99,6 +105,7 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
     let atom = fieldAtoms.get(name);
     if (!atom) {
       atom = derived(element, () => proxy[name]);
+      registerSource(atom, element, name);
       fieldAtoms.set(name, atom);
     }
     return atom;
@@ -140,6 +147,7 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
       if (isLibraryName(key)) {
         return undefined;
       }
+      if (DEV) noteRead(target, key);
 
       const field = descriptor?.[key];
       if (isLeaf(field)) {
@@ -169,6 +177,7 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
     },
   });
 
+  registerSource(proxy, element);
   byDescriptor.set(descriptor, proxy);
   return proxy;
 }

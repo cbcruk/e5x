@@ -417,6 +417,31 @@ deps 설계:
 재마운트 전부 제거. 헤드리스 Chromium을 DevTools 프로토콜로 조작해 필터/정렬/편집 후 재정렬/
 검색/외부 쓰기/JSX import가 실제 브라우저에서 올바른 값을 내는 것 확인.
 
+## Phase 11: deps 누락 탐지 — **완료** (`pnpm test` 74/74, `test/dev.test.ts`)
+
+탐지 가능한 것부터 갈랐다. 두 층이 서로 다른 것을 잡는다:
+
+1. **정적 (계산 시점)**: 사용자 함수(`$where(fn)`/`$sort(fn)`) 실행 중 e5x proxy를 통한 필드 읽기를
+   기록. 읽은 원소가 뷰 트리 밖이고 어떤 dep도 덮지 않으면 즉시 경고 — 위치(`<filters>.min`)와
+   함수 이름까지. dep 커버리지는 atom→(node, field) 등록부로 판정: 필드 atom은 그 필드만, 원소 atom·
+   collection은 그 subtree 전체를 덮는다. 상태가 바뀌기 **전에** 잡지만 proxy 밖 읽기는 못 본다.
+2. **동적 (캐시 적중 시점)**: 틱당 최대 1회 재계산해 캐시와 비교. DOM·deps 변화 없이 결과가 다르면
+   = 보이지 않는 입력을 읽었다는 증거. 클로저·외부 store·`Date.now`까지 전부 잡지만 상태가 실제로
+   바뀐 뒤 누군가 읽어야 발화. 오탐 없음(비결정적 함수는 경고가 맞다).
+   - 하위 캐시(열·집계)는 적중 시 상위 compute를 안 부르므로, 체크 함수를 deps처럼 경로를 따라
+     내려보낸다 (`Inputs = { deps, checks }`).
+   - 같은 틱에 방금 계산했으면 검증 생략 → 읽기 루프 성능·호출 횟수 테스트 불변.
+
+dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`typeof process` 가드는
+쓰면 안 된다** — 번들러가 `NODE_ENV`를 치환해도 브라우저엔 `process`가 없어 production 번들에서 dev가
+켜진다(구현 중 dist를 치환 시뮬레이션해서 발견). 치환 결과로 prod=false/dev=true/미치환=true 확인.
+
+검증: 데모 테스트에 "경고 0회" 가드 추가. 실제 Chromium(Vite dev)에서 데모 조작 시 경고 없음, deps를
+빠뜨린 뷰는 두 경고 모두 발화.
+
+선택하지 않은 대안: 정적 추적 결과로 **자동 deps**(signals식 암묵 추적). Phase 10에서 명시적 deps를
+택했으므로 경고에 머묾. 자동화는 별도 결정.
+
 ## 알려진 약점 (정직하게)
 
 - bulk write read/write 비대칭 → typed에선 iteration 강제.
@@ -425,8 +450,10 @@ deps 설계:
 - 필드 이름 `get`/`subscribe`는 schema에서 금지, loose 모드에선 collection 레벨 열로 접근 불가
   (atom 프로토콜과 맞바꾼 비용).
 - inline arrow predicate/comparator는 매번 새 함수라 뷰 공유 불가 — 공유하려면 함수를 끌어올릴 것.
-- 크기: sub-kB 미학에서 멀어지는 중 (gzip 4.06kB). 캐시 계층 + Phase 10 API.
-- deps를 빠뜨리면 여전히 조용히 틀린다 (React exhaustive-deps와 같은 한계, 탐지 불가).
+- 크기: sub-kB 미학에서 멀어지는 중 (gzip 4.96kB). 캐시 계층 + Phase 10 API + dev 체크.
+  dev 체크는 런타임 플래그라 production 번들에서도 코드는 남는다(비활성).
+- deps 누락은 dev에서만, best-effort로 탐지: proxy 밖 읽기는 상태가 바뀐 뒤 읽힐 때만, 구독만 하고
+  읽지 않는 뷰는 못 잡음. 같은 틱에 계산→외부 변경→읽기도 놓침.
 - 배열 값 atom(Column 등)을 dep으로 쓰면 `get()`이 매번 새 배열이라 memo가 무력화 (정확성은 유지).
 - 원소 atom은 거칠다: `sales.subscribe`는 어떤 item이 바뀌어도 발화. 세밀함은 `$.field`로.
 - typed collection의 index signature는 **writable** (결정 2026-09): TS는 `delete`만 허용하고

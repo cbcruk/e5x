@@ -1,6 +1,7 @@
-import { derived, memo } from './reactive';
+import { derived, memo, type Inputs } from './reactive';
+import { registerSource } from './dev';
 import { fromDom, readRaw } from './coerce';
-import type { Column, Deps, LeafDescriptor, ReadableAtom } from './types';
+import type { Column, LeafDescriptor, ReadableAtom } from './types';
 
 type Leaf = string | number | boolean;
 
@@ -9,7 +10,7 @@ interface ColumnConfig {
   field: string;
   type: LeafDescriptor;
   compute: () => Element[];
-  deps: Deps;
+  inputs: Inputs;
 }
 
 function shallowEqual(a: readonly unknown[], b: readonly unknown[]): boolean {
@@ -30,11 +31,11 @@ function extreme(values: Leaf[], direction: 1 | -1): Leaf {
 }
 
 export function createColumn(config: ColumnConfig): Column<Leaf> {
-  const { root, field, type, compute, deps } = config;
+  const { root, field, type, compute, inputs } = config;
   const values = memo(
     root,
     (): Leaf[] => compute().map((element) => fromDom(readRaw(element, field), type)),
-    deps,
+    inputs,
   );
   // The memoized array is shared by every aggregate; hand callers their own copy.
   const snapshot = (): Leaf[] => values().slice();
@@ -45,14 +46,14 @@ export function createColumn(config: ColumnConfig): Column<Leaf> {
   // its own copy, while the underlying values memo is still computed once.
   const valuesAtom: ReadableAtom<Leaf[]> = {
     get: snapshot,
-    subscribe: (listener) => derived(root, snapshot, shallowEqual, deps).subscribe(listener),
+    subscribe: (listener) => derived(root, snapshot, shallowEqual, inputs).subscribe(listener),
   };
   const aggregates = {
-    $length: derived(root, () => values().length, Object.is, deps),
-    $sum: derived(root, sum, Object.is, deps),
-    $avg: derived(root, () => (values().length === 0 ? NaN : sum() / values().length), Object.is, deps),
-    $min: derived(root, () => extreme(values(), -1), Object.is, deps),
-    $max: derived(root, () => extreme(values(), 1), Object.is, deps),
+    $length: derived(root, () => values().length, Object.is, inputs),
+    $sum: derived(root, sum, Object.is, inputs),
+    $avg: derived(root, () => (values().length === 0 ? NaN : sum() / values().length), Object.is, inputs),
+    $min: derived(root, () => extreme(values(), -1), Object.is, inputs),
+    $max: derived(root, () => extreme(values(), 1), Object.is, inputs),
   };
 
   const api = {
@@ -67,7 +68,7 @@ export function createColumn(config: ColumnConfig): Column<Leaf> {
     },
   };
 
-  return new Proxy(api, {
+  const column = new Proxy(api, {
     get(target, key) {
       if (Object.hasOwn(target, key)) {
         return target[key as keyof typeof target];
@@ -93,4 +94,6 @@ export function createColumn(config: ColumnConfig): Column<Leaf> {
       return false;
     },
   }) as unknown as Column<Leaf>;
+  registerSource(column, root);
+  return column;
 }

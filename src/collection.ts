@@ -1,6 +1,7 @@
 import { wrapNode } from './wrap';
 import { createColumn } from './column';
-import { derived, memo, sameElements } from './reactive';
+import { derived, memo, NO_INPUTS, sameElements, type Inputs } from './reactive';
+import { createStaleCheck, createTracker, registerSource, tracked } from './dev';
 import { byIdentity, weakCache, type IdentityCache } from './cache';
 import { matches } from './match';
 import {
@@ -28,7 +29,9 @@ interface CollectionConfig {
   tagName: string | null;
   descriptor: NodeDescriptor | null;
   compute: () => Element[];
-  deps?: Deps;
+  inputs?: Inputs;
+  // Set for views built from a user function; enables the development checks.
+  label?: string;
 }
 
 type ObjectPredicate = Record<string, unknown>;
@@ -57,9 +60,28 @@ function isIndex(key: string): number | null {
 
 export function createCollection(config: CollectionConfig): LooseCollection {
   const { root, owner, tagName, descriptor } = config;
-  // Deps accumulate down the path: anything derived from this view also depends on them.
-  const deps = config.deps ?? [];
-  const compute = memo(root, config.compute, deps);
+  const parent = config.inputs ?? NO_INPUTS;
+  const deps = parent.deps;
+
+  // A view built from a user function tracks what the function reads and, on cache hits,
+  // verifies that the cached result still holds. Development only.
+  const tracker = config.label ? createTracker(config.label, root, deps) : null;
+  let last: Element[] | undefined;
+  const stale = tracker
+    ? createStaleCheck(tracker, config.compute, () => last, sameElements)
+    : null;
+  // Deps and checks accumulate down the path: anything derived from this view inherits them.
+  const inputs: Inputs = stale ? { deps, checks: [...parent.checks, stale.check] } : parent;
+
+  const compute = memo(
+    root,
+    () => {
+      last = tracked(tracker, config.compute);
+      stale?.computed();
+      return last;
+    },
+    inputs,
+  );
 
   function leafType(name: string): LeafDescriptor {
     const field = descriptor?.[name];
@@ -81,7 +103,7 @@ export function createCollection(config: CollectionConfig): LooseCollection {
       kind = memo(
         root,
         () => compute().some((element) => childrenNamed(element, name).length > 0),
-        deps,
+        inputs,
       );
       fieldKinds.set(name, kind);
     }
@@ -101,9 +123,9 @@ export function createCollection(config: CollectionConfig): LooseCollection {
           tagName: name,
           descriptor: childDescriptor(descriptor?.[name]),
           compute: () => compute().flatMap((element) => childrenNamed(element, name)),
-          deps,
+          inputs,
         })
-      : createColumn({ root, field: name, type: leafType(name), compute, deps });
+      : createColumn({ root, field: name, type: leafType(name), compute, inputs });
     fieldViews.set(name, { hasChildren, view });
     return view;
   }
@@ -117,25 +139,35 @@ export function createCollection(config: CollectionConfig): LooseCollection {
   const deepByName = weakCache<LooseCollection>();
   let lengthAtom: ReadableAtom<number> | null = null;
 
-  function filtered(predicate: ObjectPredicate | FunctionPredicate, own: Deps = []): LooseCollection {
+  const withDeps = (own: Deps): Inputs =>
+    own.length > 0 ? { deps: [...deps, ...own], checks: inputs.checks } : inputs;
+
+  function filtered(
+    predicate: ObjectPredicate | FunctionPredicate,
+    own: Deps = [],
+    label?: string,
+  ): LooseCollection {
     return createCollection({
       root,
       owner,
       tagName,
       descriptor,
       compute: () => compute().filter((element) => matches(element, predicate, descriptor)),
-      deps: [...deps, ...own],
+      inputs: withDeps(own),
+      label,
     });
   }
 
-  function sorted(sort: () => Element[], own: Deps = []): LooseCollection {
-    return createCollection({ root, owner, tagName, descriptor, compute: sort, deps: [...deps, ...own] });
+  function sorted(sort: () => Element[], own: Deps = [], label?: string): LooseCollection {
+    return createCollection({ root, owner, tagName, descriptor, compute: sort, inputs: withDeps(own), label });
   }
 
   const api = {
     $where(predicate: ObjectPredicate | FunctionPredicate, own: Deps = []): LooseCollection {
       if (typeof predicate === 'function') {
-        return byIdentity(whereByFunction, predicate, own, () => filtered(predicate, own));
+        return byIdentity(whereByFunction, predicate, own, () =>
+          filtered(predicate, own, `$where predicate "${predicate.name || 'anonymous'}"`),
+        );
       }
       // Snapshot, so mutating the caller's object cannot change a view shared under its old key.
       const snapshot = { ...predicate };
@@ -152,6 +184,7 @@ export function createCollection(config: CollectionConfig): LooseCollection {
             () =>
               [...compute()].sort((a, b) => field(wrapNode(a, descriptor), wrapNode(b, descriptor))),
             own,
+            `$sort comparator "${field.name || 'anonymous'}"`,
           ),
         );
       }
@@ -179,7 +212,7 @@ export function createCollection(config: CollectionConfig): LooseCollection {
           descriptor: null,
           compute: () =>
             compute().flatMap((element) => Array.from(element.querySelectorAll(name))),
-          deps,
+          inputs,
         }),
       );
     },
@@ -198,12 +231,12 @@ export function createCollection(config: CollectionConfig): LooseCollection {
       return compute().map((element) => wrapNode(element, descriptor));
     },
     subscribe(listener: (value: LooseWrapped[]) => void): () => void {
-      return derived(root, compute, sameElements, deps).subscribe(() => {
+      return derived(root, compute, sameElements, inputs).subscribe(() => {
         listener(compute().map((element) => wrapNode(element, descriptor)));
       });
     },
     get $length(): ReadableAtom<number> {
-      lengthAtom ??= derived(root, () => compute().length, Object.is, deps);
+      lengthAtom ??= derived(root, () => compute().length, Object.is, inputs);
       return lengthAtom;
     },
     [Symbol.iterator](): Iterator<LooseWrapped> {
@@ -218,7 +251,7 @@ export function createCollection(config: CollectionConfig): LooseCollection {
     return members.length > 0 ? (members[0]!.textContent ?? '') : '';
   }
 
-  return new Proxy(api, {
+  const collection = new Proxy(api, {
     get(target, key) {
       if (Object.hasOwn(target, key)) {
         return target[key as keyof typeof target];
@@ -276,4 +309,6 @@ export function createCollection(config: CollectionConfig): LooseCollection {
       return false;
     },
   }) as unknown as LooseCollection;
+  registerSource(collection, root);
+  return collection;
 }

@@ -1,3 +1,4 @@
+import { registerSource } from './dev';
 import type { Deps, ReadableAtom } from './types';
 
 type Listener = () => void;
@@ -73,19 +74,30 @@ function version(node: Node): number {
   return versions.get(node)!;
 }
 
+// What a derived value depends on besides its node's subtree, plus the development checks
+// to run when it serves a cached result. Both flow down a path to everything derived from it.
+export interface Inputs {
+  readonly deps: Deps;
+  readonly checks: readonly (() => void)[];
+}
+
+export const NO_INPUTS: Inputs = { deps: [], checks: [] };
+
 // Valid while the node's version is unchanged and every dep still returns the same value.
 // Deps are pulled on read, so a held view is correct without anyone subscribing.
-export function memo<T>(node: Node, compute: () => T, deps: Deps = []): () => T {
+export function memo<T>(node: Node, compute: () => T, inputs: Inputs = NO_INPUTS): () => T {
   let cachedVersion = -1;
   let cachedDeps: unknown[] = [];
   let cached: T;
   return () => {
     const current = version(node);
-    const values = deps.map((dep) => dep.get());
+    const values = inputs.deps.map((dep) => dep.get());
     if (current !== cachedVersion || values.some((value, i) => !Object.is(value, cachedDeps[i]))) {
       cached = compute();
       cachedVersion = current;
       cachedDeps = values;
+    } else {
+      for (const check of inputs.checks) check();
     }
     return cached;
   };
@@ -126,10 +138,10 @@ export function derived<T>(
   node: Node,
   compute: () => T,
   isEqual: (a: T, b: T) => boolean = Object.is,
-  deps: Deps = [],
+  inputs: Inputs = NO_INPUTS,
 ): ReadableAtom<T> {
-  const get = memo(node, compute, deps);
-  return {
+  const get = memo(node, compute, inputs);
+  const atom: ReadableAtom<T> = {
     get,
     subscribe(listener) {
       let previous = get();
@@ -142,7 +154,7 @@ export function derived<T>(
         }
       };
       const stops = [watch(node, check)];
-      for (const dep of deps) {
+      for (const dep of inputs.deps) {
         // The atom protocol calls a new listener immediately; that first call is not a change.
         let subscribed = false;
         stops.push(
@@ -155,4 +167,6 @@ export function derived<T>(
       return () => stops.forEach((stop) => stop());
     },
   };
+  registerSource(atom, node);
+  return atom;
 }

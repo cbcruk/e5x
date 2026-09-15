@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { wrap, computed } from '../src/index';
 import type { ReadableAtom } from '../src/index';
 
@@ -152,12 +152,15 @@ describe('deps: views that read outside state', () => {
     expect(lengths).toEqual([2, 1]);
   });
 
-  it('stays stale without deps — the documented pitfall', () => {
+  it('stays stale without deps — the pitfall the development checks report', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { filters, sales, aboveMin } = ledger();
     const view = sales.item.$where(aboveMin);
     expect(view.type.get()).toEqual(['b', 'c']);
     filters.min = 4;
     expect(view.type.get()).toEqual(['b', 'c']);
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
   });
 
   it('carries deps down to sorted views, columns and aggregates', async () => {

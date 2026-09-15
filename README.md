@@ -139,8 +139,19 @@ const view = rows.$where(aboveMin, [filters.$.min]).$sort(byAmount, [filters.$.d
 filters.min = 100; // view, view.amount.$sum, … all update
 ```
 
-Leaving a read out of deps is not detected: the view keeps serving results for the old
-value. Deps are compared with `Object.is` on every read, so scalar atoms (like `filters.$.min`)
+A read left out of deps makes the view serve results for the old value. Outside production
+(`process.env.NODE_ENV !== 'production'`), e5x reports it with `console.warn`, once per view:
+
+- **when the view computes**, if the function reads a field of an element outside the view's
+  tree through e5x and no dep covers it — e.g. `$where predicate "aboveMin" reads
+  <filters>.min …`. A dep covers a read when it is that field's atom (`filters.$.min`) or an
+  enclosing element (`filters`).
+- **when a cached result is served**, at most once per tick, e5x recomputes and compares. A
+  different result with no DOM or dep change means the function read something e5x cannot
+  see — a closure variable, another store, `Date.now()` — and gets reported. This only fires
+  after that state has changed and something reads the view.
+
+Deps are compared with `Object.is` on every read, so scalar atoms (like `filters.$.min`)
 keep the view memoized; an array-valued atom recomputes it every time. A function shares
 its view only with the same function and the same deps.
 

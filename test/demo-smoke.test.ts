@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 function flush(): Promise<void> {
@@ -22,13 +22,22 @@ function change(element: HTMLInputElement | HTMLSelectElement, value: string | b
 const click = (selector: string, root: ParentNode = document): void =>
   root.querySelector<HTMLElement>(selector)!.click();
 
+let warn: ReturnType<typeof vi.spyOn>;
+
 beforeEach(async () => {
+  warn = vi.spyOn(console, 'warn');
   vi.resetModules();
   const html = readFileSync(`${process.cwd()}/index.html`, 'utf8');
   document.body.innerHTML = html
     .slice(html.indexOf('<body>') + 6, html.indexOf('</body>'))
     .replace(/<script[\s\S]*?<\/script>/g, '');
   await import('../demo/main');
+});
+
+// The demo declares every outside read as a dep, so the development checks must stay quiet.
+afterEach(() => {
+  expect(warn).not.toHaveBeenCalled();
+  warn.mockRestore();
 });
 
 describe('demo drives e5x end to end', () => {
