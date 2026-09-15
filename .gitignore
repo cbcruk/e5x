@@ -12,3 +12,5 @@ test/__screenshots__
 
 # Personal Claude Code settings
 .claude/settings.local.json
+# Personal feed subscriptions for apps/reader
+apps/reader/feeds.local.json

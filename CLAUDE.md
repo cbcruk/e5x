@@ -596,6 +596,25 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   객체가 요소 수명 동안 남는다(리뷰어가 GC로 확인). 문서·예제는 schema를 한 번 정의하도록 씀.
 - 이슈는 "Conditional on #12"(dogfooding 후 결정) 마일스톤이었으나 사용자가 먼저 진행하기로 함.
 
+## Dogfooding: RSS/Atom 리더 (2026-09, #5) — `apps/reader/`
+
+- 선택: 사용자가 실제 구독하는 피드(RSS 2.0, WordPress)를 읽는 로컬 리더. TodoMVC 대체안은 "매일 쓰는가"에 답을 못 줘서
+  기각. 구독 목록은 gitignore된 `apps/reader/feeds.local.json`, 저장소에는 가상 샘플만(실제 기사 미커밋).
+- 구조: 피드 XML 문서가 모델(`DOMParser` → `wrap`). 읽음·별표는 entry 요소의 attribute, localStorage는 미러.
+  `pnpm reader` = Vite dev 서버 + `/api/feed` 프록시(구독 목록에 있는 URL만, 열린 프록시 방지). 링크는 http(s)만 href.
+- 테스트 `test/reader.test.ts`는 **Chromium 전용**: happy-dom `DOMParser`가 실제 피드의 `channel`·`dc:creator`·CDATA를 잃음.
+- 마찰 기록은 `apps/reader/FRICTION.md`. 첫 빌드에서 나온 것: `atom:link`가 `link`를 가림(namespace 무시), 두 포맷
+  어댑터(Atom 규칙: rel 없는 link = alternate, author 상속, content fallback), attribute와 text를 함께 가진 요소는
+  leaf로 못 읽음, 문서 간 collection 합치기 없음, 새로고침 시 문서 통째 교체. 좋았던 것: element atom으로 영속화,
+  CDATA·`dc:` 읽기.
+- 리뷰 1회차에서 고친 것: 읽음 키에 피드 URL 포함(guid 충돌), 프록시가 upstream content-type을 믿지 않음
+  (`application/xml` + `nosniff` + `sandbox` CSP, 바이트 전달 후 브라우저에서 charset 디코딩), 목록은 의도적 스냅숏이고
+  같은 필터 재클릭은 `revision` attribute dep으로 재필터. FRICTION 4의 "entry마다 dep 필요"는 틀린 주장이었음(피드당 1개).
+- 리뷰 2회차에서 고친 것: 행 구독 해제 테스트가 사실상 없었음(작성자의 변이 실험이 `rows.reset`과 `bound.reset`을 함께
+  지워 다른 쪽이 잡은 것 — **변이는 하나씩**), id 없는 항목 키가 description만 있으면 여전히 충돌, Atom `<title>`도 text
+  construct(WordPress `type="html"`), xhtml의 script/style 텍스트, BOM 우선 디코딩, 겹친 새로고침은 최신 것만 반영.
+- #5는 이 앱을 **실제로 사용한 뒤** 기록을 요약해 닫는다(첫 PR은 `Part of #5`).
+
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (2026-09 채택)
 
 ```
@@ -658,6 +677,7 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 | #20 | #4   | 1회차 1 / 4, 2회차 0 / 1              | 1회차 5, 2회차 1                                                   | 0    | 2         | 리뷰어가 문서 주장 20가지를 실행으로 검증해 부정확한 설명 3곳을 찾았고, 레퍼런스 검사가 조용히 비는 경로(인터페이스 이름 변경·base 이동·type literal)를 차례로 재현함. 작성자는 예제 타입 체크로 `Fragment` 타입 버그를 찾음                                                                                                            |
 | #22 | #19  | 1회차 0 / 3, 2회차 0 / 3              | 1회차 2 (+1은 사용자 결정 → interface 분리), 2회차 3               | 0    | 2         | 1회차가 조건부 타입이 제네릭에서 깨지는 3가지를 찾아 설계가 바뀜(작성자가 `tsc`로 재현 후 결정 요청). 2회차는 `dist` d.ts로 descriptor별 정확한 타입·대입 가능성을 검증하고 타입 고정 테스트 공백을 지적                                                                                                                                |
 | #23 | #10  | 0 / 3                                 | 3                                                                  | 0    | 1         | 리뷰어가 deps·dev 체크·GC가 새 `$deep` 뷰까지 닿는지 프로브로 확인하고 테스트 공백, inline schema retention(요소별 proxy 캐시), 문서 타입 오기를 지적                                                                                                                                                                                   |
+| #24 | #5   | 1회차 4 / 2, 2회차 3 / 3, 3회차 0 / 5 | 1회차 6, 2회차 6, 3회차 5                                          | 0    | 3         | 앱 코드에서 리뷰어가 가장 많이 찾음: 키 충돌, Atom 규칙(rel·title·text construct), 프록시 content-type, 틀린 마찰 기록, **검증 못 하는 테스트**(분리된 요소 조회, 변이 두 개 동시 제거). 작성자의 변이 실험을 리뷰어가 단일 변이로 재검증                                                                                               |
 
 ## 알려진 약점 (정직하게)
 

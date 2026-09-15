@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Synthetic Atom sample: link elements carry href and rel, authors are nested. -->
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Sample Dev Notes</title>
+  <link href="https://notes.example.org/" rel="alternate" />
+  <link href="https://notes.example.org/atom.xml" rel="self" />
+  <id>urn:uuid:5a3c0000-0000-4000-8000-000000000000</id>
+  <updated>2026-09-15T01:00:00Z</updated>
+  <entry>
+    <title>Observing Detached Trees</title>
+    <link href="https://notes.example.org/observing-detached-trees" rel="alternate" />
+    <id>urn:uuid:5a3c0000-0000-4000-8000-000000000001</id>
+    <published>2026-09-15T00:30:00Z</published>
+    <updated>2026-09-15T00:45:00Z</updated>
+    <author><name>Robin Dev</name></author>
+    <summary>MutationObserver registrations travel with the node.</summary>
+  </entry>
+  <entry>
+    <title>Bundle Budgets</title>
+    <link href="https://notes.example.org/bundle-budgets" rel="alternate" />
+    <id>urn:uuid:5a3c0000-0000-4000-8000-000000000002</id>
+    <published>2026-09-14T12:00:00Z</published>
+    <updated>2026-09-14T12:00:00Z</updated>
+    <author><name>Robin Dev</name></author>
+    <summary type="html">&lt;p&gt;Measure what the app ships.&lt;/p&gt;</summary>
+  </entry>
+</feed>

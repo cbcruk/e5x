@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>e5x reader</title>
+    <style>
+      :root {
+        --bg: #f6f5f2;
+        --card: #fff;
+        --ink: #1c1b19;
+        --muted: #6b6860;
+        --line: #e4e1da;
+        --accent: #2f5bd3;
+        color-scheme: light dark;
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #151513;
+          --card: #1e1e1b;
+          --ink: #ecebe6;
+          --muted: #9c998f;
+          --line: #33322e;
+          --accent: #8aa8ff;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 0.25rem 0.6rem;
+        cursor: pointer;
+      }
+      .bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--line);
+      }
+      .bar h1 {
+        font-size: 1.1rem;
+        margin: 0;
+      }
+      .unread-total {
+        color: var(--muted);
+        margin-right: auto;
+      }
+      .filters {
+        display: flex;
+        gap: 0.25rem;
+      }
+      [aria-selected='true'],
+      [aria-current='true'] {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(10rem, 16rem) 1fr;
+        gap: 1rem;
+        padding: 1rem;
+        max-width: 72rem;
+        margin: 0 auto;
+      }
+      @media (max-width: 40rem) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+      .feeds,
+      .entries {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .feeds button {
+        width: 100%;
+        text-align: left;
+        border: 0;
+        background: transparent;
+        display: flex;
+        justify-content: space-between;
+        gap: 0.5rem;
+      }
+      .count {
+        color: var(--muted);
+      }
+      .entry {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 0.75rem;
+        align-items: start;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0.75rem;
+        margin-bottom: 0.5rem;
+      }
+      .entry .title {
+        color: inherit;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .entry .title:hover {
+        text-decoration: underline;
+      }
+      .entry.read .title {
+        font-weight: 400;
+        color: var(--muted);
+      }
+      .entry p {
+        margin: 0.2rem 0 0;
+      }
+      .meta,
+      .status {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      .star {
+        border: 0;
+        background: transparent;
+        font-size: 1.1rem;
+        padding: 0;
+      }
+      .starred .star {
+        color: #d19a00;
+      }
+      .toggle-read {
+        font-size: 0.8rem;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./entry.ts"></script>
+  </body>
+</html>
