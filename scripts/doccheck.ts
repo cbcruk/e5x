@@ -205,12 +205,14 @@ for (const [name, prefix] of Object.entries(memberPrefixes)) {
 for (const sf of program.getSourceFiles()) {
   if (!sf.fileName.startsWith(path.join(root, 'src') + path.sep)) continue
   ts.forEachChild(sf, function visit(node) {
-    if (ts.isInterfaceDeclaration(node)) {
+    // Type literals too: the public types are intersections, so a member can arrive as `& { $x }`.
+    if (ts.isInterfaceDeclaration(node) || ts.isTypeLiteralNode(node)) {
+      const owner = ts.isInterfaceDeclaration(node) ? `${node.name.text}.` : ''
       for (const member of node.members) {
         if (member.name?.getText().startsWith('$') && !covered.has(member)) {
           problems.push(
-            `${where(member)}  ${node.name.text}.${member.name.getText()}: $ member not covered by the ` +
-              'API reference check; add its interface to memberPrefixes',
+            `${where(member)}  ${owner}${member.name.getText()}: $ member not covered by the ` +
+              'API reference check; declare it on an interface in memberPrefixes',
           )
         }
       }
