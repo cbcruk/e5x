@@ -1,5 +1,6 @@
+/// <reference types="vite-plus/client" />
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test'
-import { readFileSync } from 'node:fs'
+import html from '../index.html?raw'
 
 function flush(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0))
@@ -23,15 +24,17 @@ const click = (selector: string, root: ParentNode = document): void =>
   root.querySelector<HTMLElement>(selector)!.click()
 
 let warn: ReturnType<typeof vi.spyOn>
+let run = 0
 
 beforeEach(async () => {
   warn = vi.spyOn(console, 'warn')
-  vi.resetModules()
-  const html = readFileSync(`${process.cwd()}/index.html`, 'utf8')
   document.body.innerHTML = html
     .slice(html.indexOf('<body>') + 6, html.indexOf('</body>'))
     .replace(/<script[\s\S]*?<\/script>/g, '')
-  await import('../demo/main')
+  // A fresh URL per test reruns the demo's top-level script against the new markup.
+  // `vi.resetModules()` does this in Node but not in browser mode, where modules stay cached.
+  run += 1
+  await import(/* @vite-ignore */ `../demo/main.ts?run=${run}`)
 })
 
 // The demo declares every outside read as a dep, so the development checks must stay quiet.

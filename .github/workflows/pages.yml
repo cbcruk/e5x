@@ -1,9 +1,10 @@
 name: Deploy demo to GitHub Pages
 
 # Deploys only after CI passes on main (a push, or a manual CI run), so a failing check always
-# blocks the deploy. There is no manual trigger here on purpose: it would skip the checks. The
-# demo is rebuilt from the same commit rather than passed over from CI, which keeps this
-# workflow free of cross-run artifact permissions; the build is deterministic.
+# blocks the deploy; every CI job counts, the Chromium tests included. There is no manual
+# trigger here on purpose: it would skip the checks. The demo is rebuilt from the same commit
+# rather than passed over from CI, which keeps this workflow free of cross-run artifact
+# permissions; the build is deterministic.
 on:
   workflow_run:
     workflows: [CI]

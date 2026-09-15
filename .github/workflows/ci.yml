@@ -30,3 +30,17 @@ jobs:
       - run: vp run test
       - run: vp build
       - run: vp run build:demo
+
+  # The observer-driven suites again in headless Chromium: happy-dom has differed from real
+  # browsers before. A separate job so it runs alongside `check`; Pages waits for both.
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: voidzero-dev/setup-vp@v1.20.0
+        with:
+          node-version: '24'
+          cache: true
+      # Headless runs use Chromium's headless shell, so the full browser is not needed.
+      - run: vp exec playwright install --with-deps --only-shell chromium
+      - run: vp run test:browser

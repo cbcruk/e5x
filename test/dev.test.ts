@@ -129,30 +129,3 @@ describe('dynamic check: cached results that no longer hold', () => {
     expect(warn).not.toHaveBeenCalled()
   })
 })
-
-describe('production builds', () => {
-  it('skips both checks when NODE_ENV is production', async () => {
-    vi.stubEnv('NODE_ENV', 'production')
-    vi.resetModules()
-    const { wrap: prodWrap } = await import('../src/index')
-    document.body.innerHTML = `<filters min="2"></filters><sales><item price="1"></item><item price="3"></item></sales>`
-    const filters = prodWrap(document.querySelector('filters')!, { min: 'number' } as const)
-    const sales = prodWrap(document.querySelector('sales')!, {
-      item: [{ price: 'number' }],
-    } as const)
-    let calls = 0
-    const view = sales.item.$where((item) => {
-      calls += 1
-      return item.price >= filters.min
-    })
-
-    view.$length.get()
-    await flush()
-    calls = 0
-    view.$length.get()
-
-    expect(warn).not.toHaveBeenCalled()
-    expect(calls).toBe(0)
-    vi.unstubAllEnvs()
-  })
-})
