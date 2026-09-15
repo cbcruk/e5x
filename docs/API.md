@@ -788,10 +788,6 @@ the reason, or tracked as an issue.
   data's way: `album.track.length` is a data column, and `album.track.$length.get()` is the member
   count.
 - **A typed bulk write must iterate** (`for (const row of rows) row.active = false`).
-  _TypeScript limitation._ `rows.active` reads as `Column<boolean>`, and a mapped type cannot give
+  _TypeScript limitation._ `rows.active` reads as `NumericColumn<boolean>`, and a mapped type cannot give
   the same property a different write type. The runtime accepts the assignment, and so do loose
   collections.
-- **Column aggregates on non-number columns** used to return values their types did not allow,
-  such as `Infinity` from `$min` on an empty string column. _Fixed in #19:_ `$min` / `$max` are
-  `T | undefined` and `undefined` when empty. String fields give a `Column<string>` without
-  `$sum` / `$avg`, and number and boolean fields give a `NumericColumn` with them.

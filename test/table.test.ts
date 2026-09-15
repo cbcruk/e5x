@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vite-plus/test'
 import { wrap } from '../src/index'
 import type { Column, NumericColumn } from '../src/index'
 
+// `true` only when A and B are the same type, not merely assignable either way.
+type Equal<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
+
 const schema = {
   row: [{ name: 'string', dept: 'string', amount: 'number', active: 'boolean' }],
 } as const
@@ -85,6 +89,26 @@ describe('column aggregates', () => {
     expect([min, strictMin, activeSum]).toEqual([10, 10, 2])
     // The runtime keeps it: loose columns are strings and are summed as numbers.
     expect(nameSum).toBeDefined()
+  })
+
+  it('gives each leaf descriptor exactly its column type', () => {
+    document.body.innerHTML = '<t><r s="a" n="1" b="true"><cs>a</cs><cn>1</cn><cb>true</cb></r></t>'
+    const t = wrap(document.body.firstElementChild!, {
+      r: [
+        { s: 'string', n: 'number', b: 'boolean', cs: '<string>', cn: '<number>', cb: '<boolean>' },
+      ],
+    } as const)
+    // Each line fails to compile unless the column type is exactly the one named.
+    const exact: [
+      Equal<typeof t.r.s, Column<string>>,
+      Equal<typeof t.r.cs, Column<string>>,
+      Equal<typeof t.r.n, NumericColumn<number>>,
+      Equal<typeof t.r.cn, NumericColumn<number>>,
+      Equal<typeof t.r.b, NumericColumn<boolean>>,
+      Equal<typeof t.r.cb, NumericColumn<boolean>>,
+    ] = [true, true, true, true, true, true]
+    expect([t.r.b.$min.get(), t.r.cb.$sum.get(), t.r.cn.$max.get()]).toEqual([true, 1, 1])
+    expect(exact).toHaveLength(6)
   })
 
   it('types columns for generic code and child-text leaves', () => {
