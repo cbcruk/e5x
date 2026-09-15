@@ -151,7 +151,9 @@ rows.$where({ dept: 'eng' }) // live filtered set
 rows.$where((r) => r.amount > 100) // predicate over wrapped elements
 rows.$sort('amount', 'desc') // typed field, descriptor-aware comparison
 rows.$sort((a, b) => b.amount - a.amount) // comparator over wrapped elements
-rows.$deep('price') // descendant axis (E4X's `..`), always loose
+rows.$deep('price') // descendant axis (E4X's `..`), loose
+rows.$deep('item', itemSchema) // typed descendants
+rows.$deep('price', 'number') // a column of descendants' text
 ```
 
 A view recomputes when the DOM under it changes. A predicate or comparator that reads

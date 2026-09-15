@@ -46,6 +46,7 @@ export default defineConfig(({ mode }) => ({
             'test/dev.test.ts',
             'test/demo-smoke.test.ts',
             'test/lifecycle.test.ts',
+            'test/deep.test.ts',
           ],
           browser: {
             enabled: true,
