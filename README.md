@@ -34,6 +34,9 @@ sales.item.$where({ type: 'carrot' }).$length.subscribe((n) => render(n))
 sales.item.price.$sum.subscribe((total) => updateFooter(total))
 ```
 
+Every export and `$` member is listed with its type and an example in the
+[API reference](docs/API.md).
+
 ## Why
 
 `df[df.type=='carrot'].quantity` (pandas), `.find({disabled:true})` (Enzyme),
@@ -189,7 +192,8 @@ its view only with the same function and the same deps.
 Object predicates are copied when the view is created, so mutating the object afterwards
 has no effect on it.
 
-`$push` and field writes put each value where the schema says it lives:
+`$push` and field writes put a new value where the schema says it lives. A child element that
+already has the field's name takes the write either way:
 
 ```ts
 const schema = { item: [{ type: 'string', note: '<string>' }] } as const

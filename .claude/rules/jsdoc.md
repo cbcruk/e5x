@@ -105,7 +105,13 @@ member of those interfaces, and every module-level export under `src/` — and i
 type-checks every code block in the public documentation as its own module that
 imports from `e5x` / `e5x/jsx`. An example
 missing its `import` therefore fails the build rather than merely reading badly.
-CI runs it on every push.
+It also checks `docs/API.md`: every export and every `$` member of wrapped
+elements, collections, and columns needs a `###` section whose heading names it
+in backticks (`` `collection.$where(...)` ``), with a `**Type:**` line and an
+example, and those examples are type-checked the same way. A `$` member on an
+interface the check does not know fails it until that interface is mapped. The
+text of a **Type:** line is not compared with the declaration, so change the
+reference in the same change as the API. CI runs it on every push.
 
 ## Renderer-dependent syntax
 

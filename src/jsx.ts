@@ -71,7 +71,8 @@ export function h(
 
 /** Collects JSX children into a `DocumentFragment` for `<>…</>` expressions. */
 export function Fragment(
-  _props: Record<string, unknown> | null,
+  // `object`, not a record: TypeScript types a fragment's props as `{}`.
+  _props: object | null,
   ...children: Child[]
 ): DocumentFragment {
   const fragment = document.createDocumentFragment()

@@ -6,7 +6,9 @@
  * export under `src/` (and the members of exported interfaces) has no JSDoc block; or when a code
  * block in the public documentation does not type-check as its own module importing from
  * `e5x` / `e5x/jsx`. Internal documentation is not scanned for examples, because internal
- * modules cannot be imported by the package name. Run with `pnpm docs:check`.
+ * modules cannot be imported by the package name. `docs/API.md` must have a `###` section, with a
+ * `**Type:**` line and an example, for every export and every `$` member, and its examples are
+ * type-checked too; the text of **Type:** lines is not verified. Run with `pnpm docs:check`.
  *
  * @module
  */
@@ -34,8 +36,9 @@ function where(node: ts.Node): string {
   return `${path.relative(root, sf.fileName)}:${line + 1}`
 }
 
-function collectExamples(comment: string, at: string): void {
-  const body = comment.replace(/^\s*\/?\*+\/?[ ]?/gm, '')
+function collectExamples(comment: string, at: string, markdown = false): void {
+  // JSDoc bodies lose their leading ` * `; Markdown files are taken as they are.
+  const body = markdown ? comment : comment.replace(/^\s*\/?\*+\/?[ ]?/gm, '')
   for (const match of body.matchAll(/```(tsx?)\n([\s\S]*?)```/g)) {
     examples.push({ lang: match[1]!, code: match[2]!, where: at })
   }
@@ -159,6 +162,108 @@ for (const [decl, publicApi] of interfaces) {
       : `[${member.kind === ts.SyntaxKind.IndexSignature ? 'index' : 'call'}]`
     requireDoc(member, `${name}.${memberName}`, publicApi)
   }
+}
+
+// The API reference (docs/API.md) is checked against the same declarations: every export and
+// every `$` member needs a `###` section whose heading names it in backticks (`wrap(...)`,
+// `collection.$where(...)`), with a `**Type:**` line and at least one example. Its examples are
+// type-checked with the JSDoc ones. The text of a **Type:** line is not compared with the
+// declaration; keep it in step by hand.
+const reference = path.join(root, 'docs/API.md')
+// Which prefix a `$` member is documented under, by the interface that declares or inherits it.
+const memberPrefixes: Record<string, string> = {
+  WrappedBase: 'element',
+  ElementAtom: 'element',
+  LooseWrapped: 'element',
+  CollectionBase: 'collection',
+  LooseCollection: 'collection',
+  Column: 'column',
+}
+const required = new Set<string>()
+for (const file of Object.values(entries)) {
+  const sf = program.getSourceFile(file)!
+  for (const exported of checker.getExportsOfModule(checker.getSymbolAtLocation(sf)!)) {
+    required.add(exported.name)
+  }
+}
+// Members are read through the type, so ones inherited from a base interface count, and every
+// `$` member declared in the package must be reached this way: a renamed interface or a member
+// moved elsewhere fails the check instead of dropping out of it.
+const covered = new Set<ts.Node>()
+for (const [name, prefix] of Object.entries(memberPrefixes)) {
+  const decl = [...interfaces.keys()].find((candidate) => candidate.name.text === name)
+  if (!decl) {
+    problems.push(`scripts/doccheck.ts: no public interface named ${name} to take $ members from`)
+    continue
+  }
+  for (const property of checker.getPropertiesOfType(checker.getTypeAtLocation(decl))) {
+    if (!property.name.startsWith('$')) continue
+    required.add(`${prefix}.${property.name}`)
+    for (const declaration of property.declarations ?? []) covered.add(declaration)
+  }
+}
+for (const sf of program.getSourceFiles()) {
+  if (!sf.fileName.startsWith(path.join(root, 'src') + path.sep)) continue
+  ts.forEachChild(sf, function visit(node) {
+    // Type literals too: the public types are intersections, so a member can arrive as `& { $x }`.
+    if (ts.isInterfaceDeclaration(node) || ts.isTypeLiteralNode(node)) {
+      const owner = ts.isInterfaceDeclaration(node) ? `${node.name.text}.` : ''
+      for (const member of node.members) {
+        if (member.name?.getText().startsWith('$') && !covered.has(member)) {
+          problems.push(
+            `${where(member)}  ${owner}${member.name.getText()}: $ member not covered by the ` +
+              'API reference check; declare it on an interface in memberPrefixes',
+          )
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  })
+}
+
+if (!ts.sys.fileExists(reference)) {
+  problems.push('docs/API.md: missing')
+} else {
+  const text = ts.sys.readFile(reference)!
+  const sections = new Map<string, { body: string; line: number }[]>()
+  const lines = text.split('\n')
+  let current: { keys: string[]; body: string[]; line: number } | null = null
+  const flush = (): void => {
+    if (!current) return
+    for (const key of current.keys) {
+      const list = sections.get(key) ?? []
+      list.push({ body: current.body.join('\n'), line: current.line })
+      sections.set(key, list)
+    }
+  }
+  lines.forEach((line, i) => {
+    const heading = /^(#{1,6})\s+(.*)$/.exec(line)
+    if (heading) {
+      flush()
+      // Only `###` headings are entries; a mention in any other heading does not count.
+      const keys =
+        heading[1] === '###'
+          ? [...heading[2]!.matchAll(/`([^`]+)`/g)].map((m) => m[1]!.split(/[(<\s]/)[0]!)
+          : []
+      current = { keys, body: [], line: i + 1 }
+    } else {
+      current?.body.push(line)
+    }
+  })
+  flush()
+  for (const key of required) {
+    const found = sections.get(key)
+    if (!found) {
+      problems.push(`docs/API.md: no section for \`${key}\``)
+      continue
+    }
+    for (const { body, line } of found) {
+      if (!/\*\*Type:\*\*/.test(body))
+        problems.push(`docs/API.md:${line}  ${key}: no **Type:** line`)
+      if (!/```tsx?\n/.test(body)) problems.push(`docs/API.md:${line}  ${key}: no example`)
+    }
+  }
+  collectExamples(text, 'docs/API.md', true)
 }
 
 // Type-check every example as its own module, resolving the package name to the sources.

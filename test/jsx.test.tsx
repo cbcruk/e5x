@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vite-plus/test'
-import { h } from '../src/jsx'
+import { Fragment, h } from '../src/jsx'
 import { wrap } from '../src/index'
 
 const schema = {
@@ -40,5 +40,20 @@ describe('XML-literal authoring via a JSX compile step', () => {
 
     expect(list.item.$length.get()).toBe(3)
     expect(list.item.type.get()).toEqual(['a', 'b', 'c'])
+  })
+
+  // tsc checks this file, so a fragment whose props TypeScript types as `{}` must compile.
+  it('builds a fragment from <>…</>', () => {
+    const fragment = (
+      <>
+        <item type="a" />
+        <item type="b" />
+      </>
+    ) as unknown as DocumentFragment
+    const list = document.createElement('items')
+    list.append(fragment)
+
+    expect(wrap(list).item.$length.get()).toBe(2)
+    void Fragment
   })
 })
