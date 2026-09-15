@@ -12,8 +12,18 @@ function detectDev(): boolean {
   }
 }
 
-/** Whether development-only diagnostics run: `true` unless `process.env.NODE_ENV` is `'production'`. */
-export const DEV: boolean = detectDev()
+// Replaced with `true` by the library's production build (`dist/index.production.js`, picked by
+// bundlers through the `production` export condition), which lets minifiers drop every
+// `if (DEV)` branch. Everywhere else it is undeclared, and `typeof` keeps that from throwing.
+declare const __E5X_PRODUCTION__: boolean
+
+/**
+ * Whether development-only diagnostics run.
+ *
+ * `false` in the production build; otherwise `true` unless `process.env.NODE_ENV` is `'production'`.
+ */
+export const DEV: boolean =
+  !(typeof __E5X_PRODUCTION__ !== 'undefined' && __E5X_PRODUCTION__) && detectDev()
 
 // What an atom reads, so a dep list can be matched against the reads a predicate makes.
 // `field: null` means the whole subtree under `node`.

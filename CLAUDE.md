@@ -525,6 +525,28 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   - 테스트용 내부 export: `heldCellCount(node)`, `weakCache().size`.
   - 비용: gzip 4.67 → 4.99kB. 쓰기+읽기 루프 벤치(2000행, 뷰 20개)에서 Chromium 차이는 노이즈 범위.
 
+## 크기 예산 + production 빌드 (2026-09, #3) — `scripts/size.ts`
+
+- **dev 체크 제거 = 조건부 exports (사용자 결정)**. `exports["."]`에 `production: ./dist/index.production.js`를
+  `import`보다 앞에 둔다. 이 빌드는 `vp build --mode production-entry`가 `__E5X_PRODUCTION__: 'true'`를 define해 만든다.
+  `DEV = !(typeof __E5X_PRODUCTION__ !== 'undefined' && __E5X_PRODUCTION__) && detectDev()`라 Rolldown이 상수로
+  접어 `if (DEV)` 분기를 지운다. define이 없는 곳(테스트·데모·번들러 없는 사용)은 `typeof` 덕에 throw하지 않고
+  기존 런타임 판정을 쓴다.
+  - 고르지 않은 안: `process.env.NODE_ENV` 인라인은 번들러 없는 브라우저에서 ReferenceError, `e5x/dev` 옵트인은
+    안전망이 기본 꺼짐.
+  - `DEV`만 상수로 해도 부족했다: `createTracker`가 런타임에 null을 돌려주는 구조라 stale check 문구가 남음 →
+    호출부를 `DEV && config.label ?`로 바꿔 접히게 함.
+- 측정(Vite 8 앱 빌드, minify+gzip, 전체 export 사용): production 조건 3,692B / 조건 없이 기본 엔트리 4,355B(dev 코드
+  남음, 비활성) / `e5x/jsx` 382B. 예산 `e5x` 4,000B, `e5x/jsx` 450B.
+- `pnpm size`: 가상 fixture 앱을 Vite `build()`로 번들. `e5x`는 self-reference로 `dist`의 exports map을 따라 해석된다
+  (`pnpm build` 선행). 예산 초과, production 번들에 dev 경고 문구 존재, **development 번들에 dev 문구 부재** 중 하나라도
+  있으면 실패(마지막은 조건이 뒤집히는 회귀 방지).
+- **Vite는 export 조건을 `mode`가 아니라 `process.env.NODE_ENV`로 고른다** (`NODE_ENV=development vite build`와 같음).
+  스크립트가 번들마다 NODE_ENV를 지정한다.
+- CI는 내장 `vp build` 대신 `vp run build`(스크립트)를 부른다: production 엔트리까지 만들어야 `size`가 돈다.
+- **`vp pack` 전환 안 함 (사용자 결정)**: 번들 크기는 소비자 minify가 정하므로 이득이 없고, .d.ts 구성이 달라져
+  소비자 관점 재검증이 필요하다. 필요해지면 따로.
+
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (실험, 2026-09~)
 
 ```
@@ -572,8 +594,9 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 - 필드 이름 `get`/`subscribe`는 schema에서 금지, loose 모드에선 collection 레벨 열로 접근 불가
   (atom 프로토콜과 맞바꾼 비용).
 - inline arrow predicate/comparator는 매번 새 함수라 뷰 공유 불가 — 공유하려면 함수를 끌어올릴 것.
-- 크기: sub-kB 미학에서 멀어지는 중 (gzip 4.99kB). 캐시 계층 + Phase 10 API + dev 체크 + #2 캐시 해제.
-  dev 체크는 런타임 플래그라 production 번들에서도 코드는 남는다(비활성).
+- 크기: sub-kB 미학에서 멀어지는 중. 앱 production 번들(minify+gzip) 3.69kB, 예산 4.0kB (`pnpm size`).
+  캐시 계층 + Phase 10 API + #2 캐시 해제. `production` 조건을 안 쓰는 번들러(esbuild·Rollup 기본)에는
+  dev 체크 코드가 남는다(비활성, 4.36kB).
 - deps 누락은 dev에서만, best-effort로 탐지: proxy 밖 읽기는 상태가 바뀐 뒤 읽힐 때만, 구독만 하고
   읽지 않는 뷰는 못 잡음. 같은 틱에 계산→외부 변경→읽기도 놓침.
 - 배열 값 atom(Column 등)을 dep으로 쓰면 `get()`이 매번 새 배열이라 memo가 무력화 (정확성은 유지).
