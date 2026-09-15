@@ -249,10 +249,19 @@ export async function mount(
   async function load(): Promise<void> {
     const current = ++latestLoad
     status.textContent = 'Loading…'
-    const sources = await options.sources()
-    const results = await Promise.allSettled(
-      sources.map(async (source) => parseFeed(source.url, await options.fetchText(source))),
-    )
+    let results: PromiseSettledResult<Feed>[]
+    try {
+      const sources = await options.sources()
+      results = await Promise.allSettled(
+        sources.map(async (source) => parseFeed(source.url, await options.fetchText(source))),
+      )
+    } catch (error) {
+      // Keep what is on screen; say why the newest load failed.
+      if (current === latestLoad) {
+        status.textContent = `Could not load feeds: ${error instanceof Error ? error.message : String(error)}`
+      }
+      return
+    }
     if (current !== latestLoad) return
     const state = saved()
     feeds = []

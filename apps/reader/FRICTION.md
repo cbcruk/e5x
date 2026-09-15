@@ -30,7 +30,9 @@ schema cannot hold:
 - a `<link>` without `rel` is `alternate` (RFC 4287), so links are a function, not `$where`;
 - an entry without `<author>` inherits the feed's;
 - a summary may be missing, with the text in `<content>`;
-- entries need a key unique across feeds, with a fallback when there is no id.
+- entries need a key unique across feeds: the guid or id, else the link, else title and date,
+  else the text. The text is last because an edited description would otherwise reset reading
+  state.
 
 Related: #9 (heterogeneous children) covers different children under one name, not this. A
 schema that says "this field, or that path" would remove some of the adapter code.

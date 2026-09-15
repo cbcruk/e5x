@@ -111,11 +111,19 @@ function rssSiteLink(channel: Element): string {
 // FRICTION 2: entries of two formats have different shapes, so each gets an adapter. A schema
 // cannot say "title here, or title there".
 // Keys are per feed: a guid only has to be unique within its feed, and an entry may have none.
-// Without an id, the key is built from what identifies the entry to a reader; whitespace in the
-// feed's markup is not part of it.
-function keyOf(feed: Feed, id: string, ...fallback: string[]): string {
+// The first non-empty id wins; without one, the title and date, or the text when both are
+// missing. Whitespace in the feed's markup is not part of a key. The fallback is only computed
+// when needed, since Atom text can mean parsing HTML.
+function keyOf(feed: Feed, ids: readonly string[], fallback: () => readonly string[]): string {
   const clean = (text: string): string => text.replace(/\s+/g, ' ').trim()
-  return `${feed.url} ${clean(id) || fallback.map(clean).join('|')}`
+  const id = ids.map(clean).find(Boolean)
+  return `${feed.url} ${id ?? fallback().map(clean).join('|')}`
+}
+
+// Title and date identify an entry; its text only when both are missing, so editing a
+// description does not reset reading state.
+function fallbackKey(title: string, date: string, text: () => string): string[] {
+  return title.trim() || date.trim() ? [title, date] : [text().slice(0, 500)]
 }
 
 function rssEntry(feed: Feed, item: RssItem): Entry {
@@ -123,12 +131,8 @@ function rssEntry(feed: Feed, item: RssItem): Entry {
     element: item.$el,
     feed,
     get key() {
-      return keyOf(
-        feed,
-        item.guid.trim() || item.link.trim(),
-        item.title,
-        item.pubDate,
-        item.description.slice(0, 500),
+      return keyOf(feed, [item.guid, item.link], () =>
+        fallbackKey(item.title, item.pubDate, () => htmlText(item.description)),
       )
     },
     get title() {
@@ -166,12 +170,8 @@ function atomEntryOf(feed: Feed, entry: AtomEntry, feedAuthor: () => string): En
     element: entry.$el,
     feed,
     get key() {
-      return keyOf(
-        feed,
-        entry.id.trim() || alternateLink(entry.link.get()),
-        this.title,
-        entry.published || entry.updated,
-        this.summary.slice(0, 500),
+      return keyOf(feed, [entry.id, alternateLink(entry.link.get())], () =>
+        fallbackKey(this.title, entry.published || entry.updated, () => this.summary),
       )
     },
     get title() {

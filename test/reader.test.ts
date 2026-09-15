@@ -108,6 +108,20 @@ describe('parseFeed', () => {
     expect(two).toMatchObject({ author: 'Own Author', summary: 'Body' })
   })
 
+  it('keys id-less items by title and date, ignoring whitespace and description edits', () => {
+    const feed = (title: string, description: string) =>
+      parseFeed(
+        'f',
+        `<rss><channel><title>t</title><item><title>${title}</title><pubDate>Mon, 14 Sep 2026 09:30:00 +0000</pubDate><description>${description}</description></item>
+          <item><guid>   </guid><link> https://example.com/x </link></item></channel></rss>`,
+      ).entries.get()
+    const [before, byLink] = feed('Same   title', 'Original body')
+    const [after] = feed('Same\n  title', 'Edited body')
+
+    expect(after!.key).toBe(before!.key)
+    expect(byLink!.key).toBe('f https://example.com/x')
+  })
+
   it('keeps keys distinct for id-less items and stable across whitespace', () => {
     const feed = parseFeed(
       'f',
@@ -261,6 +275,23 @@ describe('the reader UI', () => {
     expect(root().querySelector('.entry')!.classList.contains('starred')).toBe(true)
     expect(oldRow.isConnected).toBe(false)
     expect(oldRow.classList.contains('starred')).toBe(false)
+  })
+
+  it('keeps the list and reports it when a refresh fails', async () => {
+    let fail = false
+    const reader = await mount(root(), {
+      ...options,
+      sources: async () => {
+        if (fail) throw new Error('sources: 500')
+        return sources
+      },
+    })
+    await flush()
+    fail = true
+    await reader.refresh()
+
+    expect(titles()).toHaveLength(5)
+    expect(root().querySelector('[data-status]')!.textContent).toContain('sources: 500')
   })
 
   it('shows the newest refresh when refreshes overlap', async () => {
