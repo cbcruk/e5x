@@ -206,26 +206,19 @@ interface ElementAtom<N> {
 export type Wrapped<N> = WrappedBase & ElementAtom<N> & ElementFields<N>
 
 /**
- * The values of one field across a collection's members, with reactive aggregates.
- *
- * Indexing and iteration read the current values; the `$` members are atoms that update as
- * the DOM changes.
+ * What every column has, whatever its value type.
  *
  * @template T The field's value type.
  */
-export interface Column<T> {
+interface ColumnBase<T> {
   /** The number of values, as an atom. */
   readonly $length: ReadableAtom<number>
   /** The values as an array atom; each read and each subscriber gets its own copy. */
   readonly $values: ReadableAtom<T[]>
-  /** The sum of the values coerced with `Number`, as an atom; `0` when empty. */
-  readonly $sum: ReadableAtom<number>
-  /** The mean of the values coerced with `Number`, as an atom; `NaN` when empty. */
-  readonly $avg: ReadableAtom<number>
-  /** The smallest value, as an atom; `Infinity` when empty. */
-  readonly $min: ReadableAtom<T>
-  /** The largest value, as an atom; `-Infinity` when empty. */
-  readonly $max: ReadableAtom<T>
+  /** The smallest value, as an atom (strings compare lexically, `false` before `true`); `undefined` when empty. */
+  readonly $min: ReadableAtom<T | undefined>
+  /** The largest value, as an atom; `undefined` when empty. */
+  readonly $max: ReadableAtom<T | undefined>
   /** Returns a copy of the current values. */
   get(): T[]
   /**
@@ -239,6 +232,24 @@ export interface Column<T> {
   /** Iterates over the current values. */
   [Symbol.iterator](): Iterator<T>
 }
+
+/** The arithmetic aggregates of a number or boolean column; a boolean counts as `1` or `0`. */
+interface ColumnArithmetic {
+  /** The sum of the values coerced with `Number`, as an atom; `0` when empty. On a boolean column, the count of `true`. */
+  readonly $sum: ReadableAtom<number>
+  /** The mean of the values coerced with `Number`, as an atom; `NaN` when empty. On a boolean column, the share of `true`. */
+  readonly $avg: ReadableAtom<number>
+}
+
+/**
+ * The values of one field across a collection's members, with reactive aggregates.
+ *
+ * Indexing and iteration read the current values; the `$` members are atoms that update as
+ * the DOM changes. String columns have no `$sum` or `$avg`: declare numeric fields as `'number'`.
+ *
+ * @template T The field's value type.
+ */
+export type Column<T> = ColumnBase<T> & ([T] extends [string] ? unknown : ColumnArithmetic)
 
 /**
  * The operations every typed collection has.

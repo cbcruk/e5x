@@ -48,6 +48,43 @@ describe('column aggregates', () => {
     await flush()
     expect(seen.at(-1)).toBe(100)
   })
+
+  it('reports an empty column as undefined from $min and $max, whatever its type', async () => {
+    const data = table()
+    const none = data.row.$where({ dept: 'nobody' })
+    expect([none.amount.$min.get(), none.amount.$max.get()]).toEqual([undefined, undefined])
+    expect([none.name.$min.get(), none.name.$max.get()]).toEqual([undefined, undefined])
+    expect([none.active.$min.get(), none.active.$max.get()]).toEqual([undefined, undefined])
+    expect([data.row.name.$min.get(), data.row.name.$max.get()]).toEqual(['a', 'c'])
+
+    const seen: (number | undefined)[] = []
+    none.amount.$min.subscribe((min) => seen.push(min))
+    data.row.$push({ name: 'n', dept: 'nobody', amount: 5, active: false })
+    await flush()
+    data.row.$where({ dept: 'nobody' })[0]!.$el.remove()
+    await flush()
+    expect(seen).toEqual([undefined, 5, undefined])
+  })
+
+  it('counts true values with $sum and $avg on a boolean column', () => {
+    const data = table()
+    expect(data.row.active.$sum.get()).toBe(2)
+    expect(data.row.active.$avg.get()).toBe(2 / 3)
+  })
+
+  // Checked by tsc: these lines fail to compile if the types regress.
+  it('types $min and $max as possibly undefined and keeps $sum off string columns', () => {
+    const data = table()
+    const min: number | undefined = data.row.amount.$min.get()
+    // @ts-expect-error: an empty column has no minimum
+    const strictMin: number = data.row.amount.$min.get()
+    // @ts-expect-error: string columns have no $sum
+    const nameSum = data.row.name.$sum
+    const activeSum: number = data.row.active.$sum.get()
+    expect([min, strictMin, activeSum]).toEqual([10, 10, 2])
+    // The runtime keeps it: loose columns are strings and are summed as numbers.
+    expect(nameSum).toBeDefined()
+  })
 })
 
 describe('sort', () => {

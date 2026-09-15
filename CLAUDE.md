@@ -568,6 +568,10 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   - 의도된 것: `$sort` 둘째 인자(필드=방향, 함수=deps), 객체 predicate는 deps 없음, loose `$.name`의 atom/collection
     판정, loose에서도 `get`/`subscribe` 예약, sync `length` 없음, typed bulk write는 반복(TS 한계).
   - 이슈로 뺀 것: #19 Column 집계 타입 구멍(빈 string column의 `$min`이 `Infinity`, string `$sum`/`$avg`는 NaN).
+    → **해결(사용자 결정)**: `$min`/`$max`는 모든 타입에서 `T | undefined`, 비면 `undefined`(number의 `±Infinity`
+    폐기). `Column<T> = ColumnBase<T> & ([T] extends [string] ? unknown : ColumnArithmetic)`로 typed string column에서
+    `$sum`/`$avg`를 타입에서 뺌. boolean은 유지(true 개수·비율). 런타임은 그대로 둠: loose column은 문자열이라 합산이
+    흔하다. 데모의 `Number.isFinite` 우회가 `undefined` 검사로 바뀜.
   - 이번에 고친 것: `e5x/jsx`의 `<>…</>`가 **타입 체크를 통과하지 못했다**(TS가 fragment props를 `{}`로 줌).
     `Fragment`의 props를 `object | null`로 넓히고 tsx 테스트 추가. 레퍼런스 예제를 타입 체크하다 발견.
   - 문서화 중 확인한 사실: `$where`/`$sort` 뷰에서도 `$push`가 동작한다(부모에 추가, 뷰 조건과 무관). `$deep`과

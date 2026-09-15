@@ -20,9 +20,9 @@ function shallowEqual(a: readonly unknown[], b: readonly unknown[]): boolean {
   return a.every((value, index) => Object.is(value, b[index]))
 }
 
-function extreme(values: Leaf[], direction: 1 | -1): Leaf {
+function extreme(values: Leaf[], direction: 1 | -1): Leaf | undefined {
   if (values.length === 0) {
-    return direction === 1 ? -Infinity : Infinity
+    return undefined
   }
   return values.reduce((best, value) => {
     const order = value > best ? 1 : value < best ? -1 : 0

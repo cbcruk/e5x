@@ -555,7 +555,7 @@ the end), iterate it, `get()` a copy of the array, or `subscribe` for changes to
 Its values cannot be assigned (`column[0] = x` is rejected); for a typed bulk write, iterate the members (see
 [Design notes](#design-notes)). A column coerces to its first value in string contexts.
 
-**Type:** `interface Column<T> { $length; $values; $sum; $avg; $min; $max; get(): T[]; subscribe; readonly [index: number]: T }`
+**Type:** `type Column<T> = ColumnBase<T> & ([T] extends [string] ? unknown : ColumnArithmetic)`: `$length`, `$values`, `$min`, `$max`, `get`, `subscribe`, index and iteration on every column, plus `$sum` / `$avg` on number and boolean columns
 
 ```ts
 import { wrap } from 'e5x'
@@ -598,8 +598,9 @@ stop()
 
 ### `column.$sum`
 
-The sum of the values coerced with `Number`, as an atom. It is `0` when the column is empty, and
-`NaN` for non-numeric strings (#19).
+The sum of the values coerced with `Number`, as an atom. It is `0` when the column is empty. On a
+boolean column it counts the `true` values. Typed string columns do not have it: declare numeric
+fields as `'number'`. Loose columns are strings and keep it, and a non-numeric value makes it `NaN`.
 
 **Type:** `readonly $sum: ReadableAtom<number>`
 
@@ -612,7 +613,9 @@ const units = sales.item.quantity.$sum.get()
 
 ### `column.$avg`
 
-The mean of the values coerced with `Number`, as an atom. It is `NaN` when the column is empty.
+The mean of the values coerced with `Number`, as an atom. It is `NaN` when the column is empty. On
+a boolean column it is the share of `true` values. Like `$sum`, typed string columns do not have
+it.
 
 **Type:** `readonly $avg: ReadableAtom<number>`
 
@@ -626,30 +629,32 @@ stop()
 
 ### `column.$min`
 
-The smallest value, as an atom; strings compare lexically. It is `Infinity` when the column is
-empty, even for a string column (#19).
+The smallest value, as an atom. Strings compare lexically, and `false` sorts before `true`. It is
+`undefined` when the column is empty.
 
-**Type:** `readonly $min: ReadableAtom<T>`
+**Type:** `readonly $min: ReadableAtom<T | undefined>`
 
 ```ts
 import { wrap } from 'e5x'
 
 const sales = wrap(document.querySelector('sales')!, { item: [{ price: 'number' }] } as const)
 const cheapest = sales.item.price.$min.get()
+const label = cheapest === undefined ? 'no items' : `from ${cheapest}`
 ```
 
 ### `column.$max`
 
-The largest value, as an atom. It is `-Infinity` when the column is empty, even for a string
-column (#19).
+The largest value, as an atom. It is `undefined` when the column is empty.
 
-**Type:** `readonly $max: ReadableAtom<T>`
+**Type:** `readonly $max: ReadableAtom<T | undefined>`
 
 ```ts
 import { computed, wrap } from 'e5x'
 
 const sales = wrap(document.querySelector('sales')!, { item: [{ price: 'number' }] } as const)
-const range = computed([sales.item.price.$min, sales.item.price.$max], (min, max) => max - min)
+const range = computed([sales.item.price.$min, sales.item.price.$max], (min, max) =>
+  min === undefined || max === undefined ? 0 : max - min,
+)
 ```
 
 ## `e5x/jsx`
@@ -747,5 +752,6 @@ the reason, or tracked as an issue.
   _TypeScript limitation._ `rows.active` reads as `Column<boolean>`, and a mapped type cannot give
   the same property a different write type. The runtime accepts the assignment, and so do loose
   collections.
-- **Column aggregates on non-number columns** return values their types do not allow, such as
-  `Infinity` from `$min` on an empty string column. _Issue:_ #19.
+- **Column aggregates on non-number columns** used to return values their types did not allow,
+  such as `Infinity` from `$min` on an empty string column. _Fixed in #19:_ `$min` / `$max` are
+  `T | undefined` and `undefined` when empty, and typed string columns have no `$sum` / `$avg`.
