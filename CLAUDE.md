@@ -522,7 +522,7 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   - 캐시 적중 경로는 check 실행 전에 값을 지역 변수로 읽는다(부작용 있는 predicate가 cell을 비울 수 있음).
   - dev stale check의 `last`도 같은 cell로 바꿈(안 그러면 dev에서만 잡고 있음).
   - 테스트용 내부 export: `heldCellCount(node)`, `weakCache().size`.
-  - 비용: gzip 4.67 → 4.89kB. 쓰기+읽기 루프 벤치(2000행, 뷰 20개)에서 Chromium 차이는 노이즈 범위.
+  - 비용: gzip 4.67 → 4.99kB. 쓰기+읽기 루프 벤치(2000행, 뷰 20개)에서 Chromium 차이는 노이즈 범위.
 
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (실험, 2026-09~)
 
