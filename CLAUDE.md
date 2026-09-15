@@ -495,6 +495,22 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 - 코어 동작(MO 전달, `takeRecords()`, `characterData`, detached/shadow root 관찰)은 Chromium과 happy-dom이
   같은 결과를 냈다.
 
+## 메모리·구독 수명 (2026-09, #2) — `test/lifecycle.test.ts`
+
+- GC 테스트는 **Chromium 전용**(`--js-flags=--expose-gc`). 이슈 제안은 Node `--expose-gc`였지만 happy-dom의
+  `MutationObserver`는 `disconnect()` 전까지 관찰 대상 노드를 강하게 잡는다(`#listeners`에 target 보관). 그래서
+  happy-dom에서는 제거된 원소나 detached 트리가 회수되지 않는다. 브라우저에서는 관찰이 노드를 살려두지 않는다.
+- 각 시나리오는 별도 함수 안에서 객체를 만들고 `WeakRef`만 돌려준다. "살아 있어야 하는" 대조군(구독 중)으로
+  하네스가 retention을 볼 수 있음을 함께 확인한다. 누수를 일부러 넣어 테스트가 잡는지도 확인했다: dep 구독 미해제,
+  listener 미삭제, 강한 캐시, registry 미삭제.
+- 확인된 계약: 구독 해제는 호출자 책임. 해제하면 listener·dep 구독·`computed` 소스까지 풀린다. proxy·collection·
+  뷰 캐시는 약하게 잡혀 원소나 뷰와 함께 회수된다. `weakCache`는 테스트용 `size`를 노출한다(내부 인터페이스).
+- **observer disconnect 안 함 (결정)**: 구독자가 없어도 held 뷰의 pull 읽기가 version에 의존하고, 브라우저에서
+  관찰은 메모리를 붙잡지 않는다. 남는 비용은 관찰 중인 트리의 mutation마다 도는 `ingest` CPU뿐이다.
+- **제거된 원소 retention은 고치지 않고 문서화 (결정)**: memo가 마지막 결과 배열을 다음 읽기까지 들고 있다. 구독
+  중인 뷰는 mutation이 오면 바로 재계산해 놓아준다. 결국 구독 없이 붙잡힌 뷰의 마지막 결과 한 벌이 남는 셈이다.
+  고치려면 노드별로 memo를 WeakRef로 등록하고 ingest에서 비워야 한다. 그러면 핫패스와 크기(#3)가 늘어서 보류했다.
+
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (실험, 2026-09~)
 
 ```
@@ -547,6 +563,7 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   읽지 않는 뷰는 못 잡음. 같은 틱에 계산→외부 변경→읽기도 놓침.
 - 배열 값 atom(Column 등)을 dep으로 쓰면 `get()`이 매번 새 배열이라 memo가 무력화 (정확성은 유지).
 - 원소 atom은 거칠다: `sales.subscribe`는 어떤 item이 바뀌어도 발화. 세밀함은 `$.field`로.
+- 구독 없이 붙잡힌 collection은 DOM에서 제거된 원소를 다음 읽기까지 붙잡는다 (#2에서 문서화, 수정 보류).
 - typed collection의 index signature는 **writable** (결정 2026-09): TS는 `delete`만 허용하고
   대입을 막는 방법이 없다(readonly는 둘 다 막음). E4X식 `delete sales.item[0]` 대칭을 택함.
   구멍: `c[0] = otherRow`(wrapped 원소)는 타입 통과 후 런타임 TypeError. 일반 객체 대입은 타입 에러.
