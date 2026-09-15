@@ -9,7 +9,7 @@ import {
   sameElements,
   type Inputs,
 } from './reactive'
-import { createStaleCheck, createTracker, registerSource, tracked } from './dev'
+import { DEV, createStaleCheck, createTracker, registerSource, tracked } from './dev'
 import { byIdentity, weakCache, type IdentityCache } from './cache'
 import { matches } from './match'
 import {
@@ -81,7 +81,8 @@ export function createCollection(config: CollectionConfig): LooseCollection {
 
   // A view built from a user function tracks what the function reads and, on cache hits,
   // verifies that the cached result still holds. Development only.
-  const tracker = config.label ? createTracker(config.label, root, deps) : null
+  // `DEV &&` here, not only inside createTracker, lets the production build drop the checks.
+  const tracker = DEV && config.label ? createTracker(config.label, root, deps) : null
   // Released with the memo's own cache, so the development check keeps no removed elements alive.
   const last = cell<Element[]>()
   const stale = tracker

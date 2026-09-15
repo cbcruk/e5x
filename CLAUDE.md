@@ -525,6 +525,36 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   - 테스트용 내부 export: `heldCellCount(node)`, `weakCache().size`.
   - 비용: gzip 4.67 → 4.99kB. 쓰기+읽기 루프 벤치(2000행, 뷰 20개)에서 Chromium 차이는 노이즈 범위.
 
+## 크기 예산 + production 빌드 (2026-09, #3) — `scripts/size.ts`
+
+- **dev 체크 제거 = 조건부 exports (사용자 결정)**. `exports["."]`에 `production: ./dist/index.production.js`를
+  `import`보다 앞에 둔다. 이 빌드는 `vp build --mode production-entry`가 `__E5X_PRODUCTION__: 'true'`를 define해 만든다.
+  `DEV = !(typeof __E5X_PRODUCTION__ !== 'undefined' && __E5X_PRODUCTION__) && detectDev()`라 Rolldown이 상수로
+  접어 `if (DEV)` 분기를 지운다. define이 없는 곳(테스트·데모·번들러 없는 사용)은 `typeof` 덕에 throw하지 않고
+  기존 런타임 판정을 쓴다.
+  - 고르지 않은 안: `process.env.NODE_ENV` 인라인은 번들러 없는 브라우저에서 ReferenceError, `e5x/dev` 옵트인은
+    안전망이 기본 꺼짐.
+  - `DEV`만 상수로 해도 부족했다: `createTracker`가 런타임에 null을 돌려주는 구조라 stale check 문구가 남음 →
+    호출부를 `DEV && config.label ?`로 바꿔 접히게 함.
+- 측정(Vite 8 앱 빌드, minify+gzip, 전체 export 사용): production 조건 3,692B / 조건 없이 기본 엔트리 4,358B(dev 코드
+  남음, 비활성) / `e5x/jsx` 382B.
+- `pnpm size`: 가상 fixture 앱을 Vite `build()`로 번들. `e5x`는 self-reference로 `dist`의 exports map을 따라 해석된다
+  (`pnpm build` 선행). 실패 조건:
+  - 예산 초과: `e5x` 4,000B, `e5x/jsx` 450B, 조건 없는 번들러·Node가 받는 **기본 엔트리** 4,700B.
+  - production 번들에 dev 경고 문구가 있음.
+  - 경고 문구가 없는 dev 코드: `dist/index.production.js` 전체에 `console`·`process`(라이브러리에서 dev.ts만 씀), `src/dev.ts`
+    region에 atom 등록부의 `WeakMap`. lib 출력은 **식별자가 mangle돼** 함수 이름으로는 못 찾는다(main에서도 그랬음).
+    Rolldown region 라벨은 dev.ts가 통째로 사라지면 다음 모듈 코드에 남을 수 있어 WeakMap 검사는 오탐 가능(닫힌 쪽 실패).
+  - development 번들에 dev 문구가 없음(조건이 뒤집히는 회귀 방지).
+  - happy-dom에서 `dist/index.production.js` smoke가 틀림: 테스트는 `src`만 돌리므로 빌드 산출물의 동작, 그리고 deps
+    누락 predicate에 경고가 **안** 뜨는지 확인. smoke 전에 `NODE_ENV=development`로 둬야 경고 부재가 의미 있다.
+  - 각 조건은 회귀를 일부러 넣어 실패하는 것을 확인했다: `registerSource` gate 제거, define 제거, 산출물의 합계 부호 조작.
+- **Vite는 export 조건을 `mode`가 아니라 `process.env.NODE_ENV`로 고른다** (`NODE_ENV=development vite build`와 같음).
+  스크립트가 번들마다 NODE_ENV를 지정한다.
+- CI는 내장 `vp build` 대신 `vp run build`(스크립트)를 부른다: production 엔트리까지 만들어야 `size`가 돈다.
+- **`vp pack` 전환 안 함 (사용자 결정)**: 번들 크기는 소비자 minify가 정하므로 이득이 없고, .d.ts 구성이 달라져
+  소비자 관점 재검증이 필요하다. 필요해지면 따로.
+
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (실험, 2026-09~)
 
 ```
@@ -563,6 +593,7 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 | #14 | #13  | 1회차 1 / 4, 2회차 0 / 3              | 1회차 4 (+1 거절, 메모 추가), 2회차 3                              | 0    | 2         | 리뷰어가 수동 배포의 검사 우회 회귀와, 작성자 커밋에서 빠진 CLAUDE.md 변경을 코드 대조로 찾음                                                                                                                                                                                                                                           |
 | #15 | #1   | 0 / 3                                 | 2 (1은 머지 전 확인 절차라 반영 대상 아님)                         | 0    | 1         | 리뷰어가 임시 복사본에서 프로브를 돌려 production 테스트 분리 이유의 누락(`NODE_ENV` 변환 치환)을 찾음. 수정이 주석·문서뿐이라 재리뷰 생략                                                                                                                                                                                              |
 | #16 | #2   | 1회차 0 / 4, 2회차 3 / 2, 3회차 0 / 2 | 1회차 3 (+1은 사용자 확인 → 수정 결정), 2회차 5, 3회차 1 (+1 거절) | 0    | 3         | 1회차: 누수 6가지를 더 넣어 검출력 확인, `cachedDeps` retention 재현. 2회차: 수정 코드의 회귀 2개(회수된 dep ref가 `undefined`와 같음, 강한 cell 등록부의 무한 retention)를 Chromium 프로브와 heap 측정으로 잡음. 둘 다 기존 테스트를 통과하던 버그. 3회차: 수정 확인(heap 차이가 뷰 수와 무관하게 약 0.35MB), CLAUDE.md 낡은 기록 지적 |
+| #18 | #3   | 1회차 0 / 5, 2회차 0 / 3              | 1회차 5, 2회차 3                                                   | 1    | 2         | 오탐 1: 1회차의 "production 엔트리에 `registerSource` 등 이름 없음" 확인은 lib 출력 mangle 때문에 무의미했음(작성자가 발견, 2회차가 확인). 2회차는 smoke의 경고 부재 검사가 앞선 NODE_ENV에 기대 우연히 성립함을 찾음. 3회차 생략(수정이 작고 회귀 주입으로 확인)                                                                       |
 
 ## 알려진 약점 (정직하게)
 
@@ -572,8 +603,9 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 - 필드 이름 `get`/`subscribe`는 schema에서 금지, loose 모드에선 collection 레벨 열로 접근 불가
   (atom 프로토콜과 맞바꾼 비용).
 - inline arrow predicate/comparator는 매번 새 함수라 뷰 공유 불가 — 공유하려면 함수를 끌어올릴 것.
-- 크기: sub-kB 미학에서 멀어지는 중 (gzip 4.99kB). 캐시 계층 + Phase 10 API + dev 체크 + #2 캐시 해제.
-  dev 체크는 런타임 플래그라 production 번들에서도 코드는 남는다(비활성).
+- 크기: sub-kB 미학에서 멀어지는 중. 앱 production 번들(minify+gzip) 3.69kB, 예산 4.0kB (`pnpm size`).
+  캐시 계층 + Phase 10 API + #2 캐시 해제. `production` 조건을 안 쓰는 번들러(esbuild·Rollup 기본)에는
+  dev 체크 코드가 남는다(비활성, 4.36kB).
 - deps 누락은 dev에서만, best-effort로 탐지: proxy 밖 읽기는 상태가 바뀐 뒤 읽힐 때만, 구독만 하고
   읽지 않는 뷰는 못 잡음. 같은 틱에 계산→외부 변경→읽기도 놓침.
 - 배열 값 atom(Column 등)을 dep으로 쓰면 `get()`이 매번 새 배열이라 memo가 무력화 (정확성은 유지).

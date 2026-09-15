@@ -18,7 +18,9 @@ Closes #
 - [ ] `pnpm typecheck`
 - [ ] `pnpm docs:check`
 - [ ] `pnpm test`
-- [ ] `vp build`
+- [ ] `pnpm test:browser`
+- [ ] `pnpm build` (not `vp build`, which skips the production entry)
+- [ ] `pnpm size`
 - [ ] `pnpm build:demo`
 
 ## Review

@@ -3,8 +3,14 @@ import { configDefaults } from 'vite-plus/test/config'
 import { playwright } from 'vite-plus/test/browser-playwright'
 import dts from 'vite-plugin-dts'
 
-export default defineConfig({
-  plugins: [dts({ include: ['src'] })],
+// `vp build` emits the default entries and types. `vp build --mode production-entry` adds
+// `dist/index.production.js`, the same library with the development checks compiled out, which
+// package.json maps to the `production` export condition.
+const productionEntry = 'production-entry'
+
+export default defineConfig(({ mode }) => ({
+  plugins: mode === productionEntry ? [] : [dts({ include: ['src'] })],
+  define: mode === productionEntry ? { __E5X_PRODUCTION__: 'true' } : {},
   // Classic JSX runtime for the opt-in XML-literal entry (`e5x/jsx`).
   oxc: {
     jsx: { runtime: 'classic', pragma: 'h', pragmaFrag: 'Fragment' },
@@ -53,12 +59,13 @@ export default defineConfig({
     ],
   },
   build: {
+    emptyOutDir: mode !== productionEntry,
     lib: {
-      entry: {
-        index: 'src/index.ts',
-        jsx: 'src/jsx.ts',
-      },
+      entry:
+        mode === productionEntry
+          ? { 'index.production': 'src/index.ts' }
+          : { index: 'src/index.ts', jsx: 'src/jsx.ts' },
       formats: ['es'],
     },
   },
-})
+}))

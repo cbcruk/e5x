@@ -28,7 +28,9 @@ jobs:
       - run: vp run typecheck
       - run: vp run docs:check
       - run: vp run test
-      - run: vp build
+      # The script, not the built-in: it also emits dist/index.production.js, which `size` needs.
+      - run: vp run build
+      - run: vp run size
       - run: vp run build:demo
 
   # Headless Chromium: the observer-driven suites again (happy-dom has differed from real

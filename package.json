@@ -23,6 +23,7 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "production": "./dist/index.production.js",
       "import": "./dist/index.js"
     },
     "./jsx": {
@@ -32,7 +33,7 @@
   },
   "scripts": {
     "dev": "vp dev",
-    "build": "tsc --noEmit && vp build",
+    "build": "tsc --noEmit && vp build && vp build --mode production-entry",
     "build:demo": "vp build --config vite.demo.config.ts",
     "test": "vp test run --project happy-dom",
     "test:browser": "vp test run --project chromium",
@@ -40,7 +41,8 @@
     "typecheck": "tsc --noEmit",
     "check": "vp check",
     "docs:check": "node scripts/doccheck.ts",
-    "prepublishOnly": "pnpm test && pnpm build"
+    "size": "node scripts/size.ts",
+    "prepublishOnly": "pnpm test && pnpm build && pnpm size"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",

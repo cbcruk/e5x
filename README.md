@@ -175,6 +175,13 @@ A read left out of deps makes the view serve results for the old value. Outside 
   see — a closure variable, another store, `Date.now()` — and gets reported. This only fires
   after that state has changed and something reads the view.
 
+The checks are not in your production bundle. `e5x` exports a second build under the
+`production` [export condition](https://nodejs.org/api/packages.html#community-conditions-definitions),
+with the checks compiled out. Vite and webpack pick it for production builds on their own.
+With esbuild or Rollup, add `production` to the resolve conditions. Without it, the checks stay
+in the bundle but switch off once `process.env.NODE_ENV` is `'production'`. Loaded without a
+bundler, e5x does not need `process` to exist.
+
 Deps are compared with `Object.is` on every read, so scalar atoms (like `filters.$.min`)
 keep the view memoized; an array-valued atom recomputes it every time. A function shares
 its view only with the same function and the same deps.
