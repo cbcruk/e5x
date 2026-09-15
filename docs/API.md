@@ -43,9 +43,10 @@ the same schema object returns the same proxy.
 - **Without one** (loose mode), a name reads as the child collection when children with that name
   exist, else the attribute, else an empty collection. An empty collection is truthy, so test
   presence with `$length`.
-- **Writes** go through `String(value)`. They land where the schema stores the leaf, as an
-  attribute or as child text. In loose mode a write goes to an existing child's text, else to the
-  attribute.
+- **Writes** go through `String(value)`. A write goes to the text of an existing child element with
+  that name, whatever the schema says. With no such child, it creates the storage the schema
+  names: an attribute, or a child element for `'<type>'` leaves. Loose mode writes the attribute.
+  Use `$attr` to write an attribute next to a same-name child.
 - **Reserved names:** a schema that uses one fails to compile, naming the field, and `wrap` throws
   a `TypeError`. See `ReservedName`.
 
@@ -128,7 +129,8 @@ const children: FieldDescriptor = [{ type: 'string' }] as const
 
 A scalar field, plus where it is stored. A bare type (`'number'`) is stored as an attribute. A
 bracketed type (`'<number>'`) is stored as a child element's text. Reads accept either storage.
-The form decides what writes and `$push` create.
+The form decides what writes and `$push` create when the value is not stored yet; an existing
+same-name child always takes the write.
 
 **Type:** `` type LeafDescriptor = LeafType | `<${LeafType}>` ``
 
@@ -704,12 +706,14 @@ document.querySelector('sales')!.append(
 
 ## Development checks and production builds
 
-When `process.env.NODE_ENV` is not `'production'`, e5x warns once per view whose function reads
-state that is not in its deps. It checks in two places:
+When `process.env.NODE_ENV` is not `'production'`, e5x warns when a view's function reads state
+that is not in its deps. It checks in two places:
 
 - **When the view computes:** a read of another element's field through e5x that no dep covers.
-- **When a cached result is served:** e5x recomputes at most once per tick and warns if the result
-  differs with no DOM or dep change.
+  It warns once per such field per view, so two missing fields give two warnings.
+- **When a cached result is served:** e5x recomputes at most once per tick and warns, once per
+  view, if the result differs with no DOM or dep change. It stays quiet for a view that already
+  has a warning from the first check.
 
 The package's `production` export condition points at a build with the checks compiled out. Vite
 and webpack select it in production builds on their own; with esbuild or Rollup, add `production`
@@ -733,7 +737,9 @@ the reason, or tracked as an issue.
   collection. A schema fixes the kind.
 - **`get` / `subscribe` are reserved on wrapped elements, even in loose mode.** _Intended._ Every
   wrapped element is an atom, and atoms must satisfy the store contract that `computed` and Svelte
-  rely on. Data with those names is reachable through `$attr`.
+  rely on. On an element, data with those names is reachable through `$attr`. A collection has
+  no `$attr`: `rows.get` is the atom method, so a column of a `get` field is reachable only through
+  the members (`for (const row of rows) row.$attr.get`).
 - **There is no synchronous `length`.** _Intended._ The `$` prefix keeps library names out of the
   data's way: `album.track.length` is a data column, and `album.track.$length.get()` is the member
   count.

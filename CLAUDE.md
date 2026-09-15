@@ -559,7 +559,11 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 
 - 모든 export와 wrapped element·collection·column의 모든 `$` 멤버에 섹션 하나씩: **Type:** 줄 + 예제. `docs:check`가
   TS 선언에서 필요한 목록을 뽑아 섹션·Type 줄·예제 존재를 확인하고, 예제를 JSDoc 예제와 같은 방식으로 타입 체크한다
-  (heading의 backtick 이름을 `(`·`<` 앞에서 잘라 키로 씀: `collection.$where`).
+  (`###` heading의 backtick 이름을 `(`·`<` 앞에서 잘라 키로 씀: `collection.$where`).
+  - `$` 멤버는 `memberPrefixes`(인터페이스 이름 → `element`/`collection`/`column`)로 찾되 **타입을 통해** 읽어 상속 멤버도
+    포함한다. 매핑된 이름이 없거나, 어떤 매핑에도 안 걸리는 `$` 멤버가 `src`에 있으면 실패한다. 처음 구현은 이름이 안
+    맞으면 조용히 건너뛰어 인터페이스 이름 변경·base 인터페이스 이동 시 검사가 비었다(리뷰어가 3가지로 재현).
+  - **Type:** 줄의 내용은 선언과 비교하지 않는다(한계). API 변경 시 손으로 맞출 것.
 - 점검 결과(레퍼런스 "Design notes"에 기록):
   - 의도된 것: `$sort` 둘째 인자(필드=방향, 함수=deps), 객체 predicate는 deps 없음, loose `$.name`의 atom/collection
     판정, loose에서도 `get`/`subscribe` 예약, sync `length` 없음, typed bulk write는 반복(TS 한계).
@@ -568,6 +572,8 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
     `Fragment`의 props를 `object | null`로 넓히고 tsx 테스트 추가. 레퍼런스 예제를 타입 체크하다 발견.
   - 문서화 중 확인한 사실: `$where`/`$sort` 뷰에서도 `$push`가 동작한다(부모에 추가, 뷰 조건과 무관). `$deep`과
     중첩 필드 collection만 `Error`.
+  - 리뷰어가 문서 주장을 실행으로 검증하다 찾은 부정확함: 필드 쓰기는 schema와 무관하게 **같은 이름의 기존 child를
+    먼저** 쓴다(`writeField`), static deps 경고는 뷰당 1회가 아니라 **바깥 필드당** 1회. README 문구도 함께 고침.
 
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (실험, 2026-09~)
 
