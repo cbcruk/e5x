@@ -34,6 +34,9 @@ sales.item.$where({ type: 'carrot' }).$length.subscribe((n) => render(n))
 sales.item.price.$sum.subscribe((total) => updateFooter(total))
 ```
 
+Every export and `$` member is listed with its type and an example in the
+[API reference](docs/API.md).
+
 ## Why
 
 `df[df.type=='carrot'].quantity` (pandas), `.find({disabled:true})` (Enzyme),

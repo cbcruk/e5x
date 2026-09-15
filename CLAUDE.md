@@ -555,6 +555,20 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 - **`vp pack` 전환 안 함 (사용자 결정)**: 번들 크기는 소비자 minify가 정하므로 이득이 없고, .d.ts 구성이 달라져
   소비자 관점 재검증이 필요하다. 필요해지면 따로.
 
+## API 레퍼런스 + 일관성 점검 (2026-09, #4) — `docs/API.md`
+
+- 모든 export와 wrapped element·collection·column의 모든 `$` 멤버에 섹션 하나씩: **Type:** 줄 + 예제. `docs:check`가
+  TS 선언에서 필요한 목록을 뽑아 섹션·Type 줄·예제 존재를 확인하고, 예제를 JSDoc 예제와 같은 방식으로 타입 체크한다
+  (heading의 backtick 이름을 `(`·`<` 앞에서 잘라 키로 씀: `collection.$where`).
+- 점검 결과(레퍼런스 "Design notes"에 기록):
+  - 의도된 것: `$sort` 둘째 인자(필드=방향, 함수=deps), 객체 predicate는 deps 없음, loose `$.name`의 atom/collection
+    판정, loose에서도 `get`/`subscribe` 예약, sync `length` 없음, typed bulk write는 반복(TS 한계).
+  - 이슈로 뺀 것: #19 Column 집계 타입 구멍(빈 string column의 `$min`이 `Infinity`, string `$sum`/`$avg`는 NaN).
+  - 이번에 고친 것: `e5x/jsx`의 `<>…</>`가 **타입 체크를 통과하지 못했다**(TS가 fragment props를 `{}`로 줌).
+    `Fragment`의 props를 `object | null`로 넓히고 tsx 테스트 추가. 레퍼런스 예제를 타입 체크하다 발견.
+  - 문서화 중 확인한 사실: `$where`/`$sort` 뷰에서도 `$push`가 동작한다(부모에 추가, 뷰 조건과 무관). `$deep`과
+    중첩 필드 collection만 `Error`.
+
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (실험, 2026-09~)
 
 ```
