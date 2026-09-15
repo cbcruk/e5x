@@ -7,8 +7,8 @@
  * - each bundle, built for production and minified, must fit its gzip budget: `e5x` through the
  *   `production` condition, `e5x/jsx`, and the default `e5x` entry that bundlers without that
  *   condition (and Node) get;
- * - the production bundle of `e5x` must not contain the development checks' warnings, and the
- *   `src/dev.ts` part of `dist/index.production.js` must not keep their runtime state;
+ * - the production bundle of `e5x` must not contain the development checks' warnings, and
+ *   `dist/index.production.js` must not keep their runtime state;
  * - a development bundle of `e5x` must still contain the warnings, so the `production` condition
  *   is what removes them;
  * - `dist/index.production.js` must still work, without warning: a short smoke run under happy-dom.
@@ -37,10 +37,11 @@ const budgets = {
 
 // Text that only the development checks contain: their warning messages.
 const devMarkers = ["outside the view's tree", 'neither the DOM nor its deps']
-// Development-only code without a message, such as the atom registry, is caught in the
-// `src/dev.ts` region of the production entry. Identifiers are mangled there, so this looks for
-// what the checks need at runtime instead; only the inert `tracked` helper may remain.
-const devRuntime = ['WeakMap', 'Set', 'console', 'process']
+// Development-only code that has no message. `console` and `process` appear nowhere else in the
+// library, so the whole production entry must be free of them. The atom registry is a `WeakMap`,
+// which other modules use too, so it is looked for in the `src/dev.ts` region only. Identifiers
+// are mangled in lib output, so names cannot be matched.
+const devGlobals = ['console', 'process']
 
 // An app that uses every export, so tree shaking keeps the whole entry.
 const entryId = 'virtual:size-fixture'
@@ -114,15 +115,19 @@ for (const marker of devMarkers) {
 }
 
 const productionSource = readFileSync(productionEntry, 'utf8')
-const devRegion = /\/\/#region src\/dev\.ts\n([\s\S]*?)\/\/#endregion/.exec(productionSource)?.[1]
-if (devRegion === undefined) {
-  problems.push('dist/index.production.js has no src/dev.ts region to inspect')
-} else {
-  for (const name of devRuntime) {
-    if (new RegExp(`\\b${name}\\b`).test(devRegion)) {
-      problems.push(`dist/index.production.js keeps development-check code (${name} in src/dev.ts)`)
-    }
+for (const name of devGlobals) {
+  if (new RegExp(`\\b${name}\\b`).test(productionSource)) {
+    problems.push(`dist/index.production.js keeps development-check code (${name})`)
   }
+}
+// Rolldown's region labels are hints: once dev.ts is compiled out completely, the label can stay
+// on the next module's code. A missing region means nothing of dev.ts survived.
+const devRegion = /\/\/#region src\/dev\.ts\n([\s\S]*?)\/\/#endregion/.exec(productionSource)?.[1]
+if (devRegion !== undefined && /\bWeakMap\b/.test(devRegion)) {
+  problems.push(
+    'dist/index.production.js seems to keep the atom registry (a WeakMap in the src/dev.ts region; ' +
+      'region labels can be wrong, so check the output if dev.ts no longer survives at all)',
+  )
 }
 
 const development = await bundle({ specifier: 'e5x', mode: 'development' })
@@ -134,6 +139,9 @@ for (const marker of devMarkers) {
 
 // The tests run against src/, so make sure the compiled-out build still behaves.
 async function smoke(): Promise<string | null> {
+  // Outside the production entry this would turn the checks on, so a missing warning below can
+  // only come from the checks being compiled out, not from a NODE_ENV left over by a bundle.
+  process.env.NODE_ENV = 'development'
   const window = new Window()
   Object.assign(globalThis, { MutationObserver: window.MutationObserver })
   const { document } = window

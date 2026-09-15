@@ -542,11 +542,12 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   (`pnpm build` 선행). 실패 조건:
   - 예산 초과: `e5x` 4,000B, `e5x/jsx` 450B, 조건 없는 번들러·Node가 받는 **기본 엔트리** 4,700B.
   - production 번들에 dev 경고 문구가 있음.
-  - `dist/index.production.js`의 `//#region src/dev.ts`에 `WeakMap`·`Set`·`console`·`process`가 있음. 경고 문구가
-    없는 dev 코드(atom 등록부)를 잡는다. lib 출력은 **식별자가 mangle돼** 함수 이름으로는 못 찾는다(main에서도 그랬음).
+  - 경고 문구가 없는 dev 코드: `dist/index.production.js` 전체에 `console`·`process`(라이브러리에서 dev.ts만 씀), `src/dev.ts`
+    region에 atom 등록부의 `WeakMap`. lib 출력은 **식별자가 mangle돼** 함수 이름으로는 못 찾는다(main에서도 그랬음).
+    Rolldown region 라벨은 dev.ts가 통째로 사라지면 다음 모듈 코드에 남을 수 있어 WeakMap 검사는 오탐 가능(닫힌 쪽 실패).
   - development 번들에 dev 문구가 없음(조건이 뒤집히는 회귀 방지).
   - happy-dom에서 `dist/index.production.js` smoke가 틀림: 테스트는 `src`만 돌리므로 빌드 산출물의 동작, 그리고 deps
-    누락 predicate에 경고가 **안** 뜨는지 확인.
+    누락 predicate에 경고가 **안** 뜨는지 확인. smoke 전에 `NODE_ENV=development`로 둬야 경고 부재가 의미 있다.
   - 각 조건은 회귀를 일부러 넣어 실패하는 것을 확인했다: `registerSource` gate 제거, define 제거, 산출물의 합계 부호 조작.
 - **Vite는 export 조건을 `mode`가 아니라 `process.env.NODE_ENV`로 고른다** (`NODE_ENV=development vite build`와 같음).
   스크립트가 번들마다 NODE_ENV를 지정한다.
@@ -592,6 +593,7 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 | #14 | #13  | 1회차 1 / 4, 2회차 0 / 3              | 1회차 4 (+1 거절, 메모 추가), 2회차 3                              | 0    | 2         | 리뷰어가 수동 배포의 검사 우회 회귀와, 작성자 커밋에서 빠진 CLAUDE.md 변경을 코드 대조로 찾음                                                                                                                                                                                                                                           |
 | #15 | #1   | 0 / 3                                 | 2 (1은 머지 전 확인 절차라 반영 대상 아님)                         | 0    | 1         | 리뷰어가 임시 복사본에서 프로브를 돌려 production 테스트 분리 이유의 누락(`NODE_ENV` 변환 치환)을 찾음. 수정이 주석·문서뿐이라 재리뷰 생략                                                                                                                                                                                              |
 | #16 | #2   | 1회차 0 / 4, 2회차 3 / 2, 3회차 0 / 2 | 1회차 3 (+1은 사용자 확인 → 수정 결정), 2회차 5, 3회차 1 (+1 거절) | 0    | 3         | 1회차: 누수 6가지를 더 넣어 검출력 확인, `cachedDeps` retention 재현. 2회차: 수정 코드의 회귀 2개(회수된 dep ref가 `undefined`와 같음, 강한 cell 등록부의 무한 retention)를 Chromium 프로브와 heap 측정으로 잡음. 둘 다 기존 테스트를 통과하던 버그. 3회차: 수정 확인(heap 차이가 뷰 수와 무관하게 약 0.35MB), CLAUDE.md 낡은 기록 지적 |
+| #18 | #3   | 1회차 0 / 5, 2회차 0 / 3              | 1회차 5, 2회차 3                                                   | 1    | 2         | 오탐 1: 1회차의 "production 엔트리에 `registerSource` 등 이름 없음" 확인은 lib 출력 mangle 때문에 무의미했음(작성자가 발견, 2회차가 확인). 2회차는 smoke의 경고 부재 검사가 앞선 NODE_ENV에 기대 우연히 성립함을 찾음. 3회차 생략(수정이 작고 회귀 주입으로 확인)                                                                       |
 
 ## 알려진 약점 (정직하게)
 
