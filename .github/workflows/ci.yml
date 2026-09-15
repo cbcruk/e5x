@@ -4,6 +4,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Run manually on main to redeploy the demo: Pages follows a successful CI run.
+  workflow_dispatch:
 
 permissions:
   contents: read

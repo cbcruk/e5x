@@ -18,6 +18,8 @@ Closes #
 - [ ] `pnpm typecheck`
 - [ ] `pnpm docs:check`
 - [ ] `pnpm test`
+- [ ] `vp build`
+- [ ] `pnpm build:demo`
 
 ## Review
 
