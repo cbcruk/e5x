@@ -108,6 +108,37 @@ describe('parseFeed', () => {
     expect(two).toMatchObject({ author: 'Own Author', summary: 'Body' })
   })
 
+  it('keeps keys distinct for id-less items and stable across whitespace', () => {
+    const feed = parseFeed(
+      'f',
+      `<rss><channel><title>t</title>
+        <item><description>first</description></item>
+        <item><description>second</description></item>
+        <item><guid>
+          abc
+        </guid></item>
+      </channel></rss>`,
+    )
+    const keys = feed.entries.get().map((entry) => entry.key)
+
+    expect(new Set(keys).size).toBe(3)
+    expect(keys[2]).toBe('f abc')
+  })
+
+  it('reads Atom titles as text constructs and drops script text from xhtml', () => {
+    const feed = parseFeed(
+      'wp',
+      `<feed xmlns="http://www.w3.org/2005/Atom"><title type="html"><![CDATA[Feed &amp; Co]]></title>
+        <entry><id>1</id><updated>2026-09-14T00:00:00Z</updated>
+          <title type="html"><![CDATA[Don&#8217;t Stop &amp; Go]]></title>
+          <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><p>Body</p><script>evil()</script><style>p{}</style></div></content>
+        </entry></feed>`,
+    )
+
+    expect(feed.title).toBe('Feed & Co')
+    expect(feed.entries.get()[0]).toMatchObject({ title: 'Don’t Stop & Go', summary: 'Body' })
+  })
+
   it('decodes feeds in the charset they declare', () => {
     const bytes = (text: string) => Uint8Array.from(text, (char) => char.charCodeAt(0)).buffer
     const latin1 = bytes(
@@ -115,7 +146,29 @@ describe('parseFeed', () => {
     )
 
     expect(parseFeed('x', decodeFeed(latin1, null)).title).toBe('café')
-    expect(parseFeed('x', decodeFeed(latin1, 'text/xml; charset=ISO-8859-1')).title).toBe('café')
+
+    // The header beats the declaration, and spaces around `=` are allowed.
+    const mislabelled = bytes(
+      '<?xml version="1.0" encoding = "UTF-8"?><rss><channel><title>caf\u00e9</title></channel></rss>',
+    )
+    expect(parseFeed('x', decodeFeed(mislabelled, 'text/xml; charset=ISO-8859-1')).title).toBe(
+      'café',
+    )
+    const spaced = bytes(
+      '<?xml version="1.0" encoding = "ISO-8859-1"?><rss><channel><title>caf\u00e9</title></channel></rss>',
+    )
+    expect(parseFeed('x', decodeFeed(spaced, null)).title).toBe('café')
+
+    // A byte order mark beats both.
+    const utf8 = new TextEncoder().encode('\ufeff<rss><channel><title>café</title></channel></rss>')
+    expect(parseFeed('x', decodeFeed(utf8.buffer, 'text/xml; charset=ISO-8859-1')).title).toBe(
+      'café',
+    )
+    const text16 = '\ufeff<rss><channel><title>café</title></channel></rss>'
+    const utf16 = new Uint8Array(text16.length * 2)
+    for (let i = 0; i < text16.length; i++) utf16[i * 2] = text16.charCodeAt(i) & 0xff
+    for (let i = 0; i < text16.length; i++) utf16[i * 2 + 1] = text16.charCodeAt(i) >> 8
+    expect(parseFeed('x', decodeFeed(utf16.buffer, null)).title).toBe('café')
   })
 
   it('rejects documents that are not feeds', () => {
@@ -193,6 +246,41 @@ describe('the reader UI', () => {
     click('[data-filter="unread"]')
     await flush()
     expect(titles()).toHaveLength(4)
+  })
+
+  it('releases the subscriptions of rows it replaces', async () => {
+    await mount(root(), options)
+    await flush()
+    const oldRow = root().querySelector('.entry')!
+
+    click('[data-filter="all"]')
+    await flush()
+    click('.entry [data-star]')
+    await flush()
+
+    expect(root().querySelector('.entry')!.classList.contains('starred')).toBe(true)
+    expect(oldRow.isConnected).toBe(false)
+    expect(oldRow.classList.contains('starred')).toBe(false)
+  })
+
+  it('shows the newest refresh when refreshes overlap', async () => {
+    let calls = 0
+    const reader = await mount(root(), {
+      ...options,
+      sources: async () => [sources[0]!],
+      fetchText: async () => {
+        calls += 1
+        if (calls === 2) {
+          await new Promise((resolve) => setTimeout(resolve, 50))
+          return rss.replace('Band Announces Tour', 'Stale Title')
+        }
+        return rss.replace('Band Announces Tour', 'Fresh Title')
+      },
+    })
+    await Promise.all([reader.refresh(), reader.refresh()])
+    await flush()
+
+    expect(titles()[0]).toContain('Fresh Title')
   })
 
   it('refreshes without losing state or leaving the old documents live', async () => {

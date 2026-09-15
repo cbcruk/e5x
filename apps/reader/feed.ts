@@ -25,7 +25,7 @@ const rssSchema = {
 const atomText = [{ type: 'string' }] as const
 
 const atomEntry = {
-  title: '<string>',
+  title: atomText,
   id: '<string>',
   published: '<string>',
   updated: '<string>',
@@ -38,7 +38,7 @@ const atomEntry = {
 } as const
 
 const atomSchema = {
-  title: '<string>',
+  title: atomText,
   link: [{ href: 'string', rel: 'string' }],
   author: [{ name: '<string>' }],
   entry: [atomEntry],
@@ -85,8 +85,12 @@ function htmlText(markup: string): string {
 function atomTextOf(element: Element | undefined): string {
   if (!element) return ''
   const type = element.getAttribute('type')
-  const text = element.textContent ?? ''
-  return type === 'html' ? htmlText(text) : text.replace(/\s+/g, ' ').trim()
+  if (type === 'html') return htmlText(element.textContent ?? '')
+  const copy = element.cloneNode(true) as Element
+  if (type === 'xhtml') {
+    for (const inert of copy.querySelectorAll('script, style')) inert.remove()
+  }
+  return (copy.textContent ?? '').replace(/\s+/g, ' ').trim()
 }
 
 // RFC 4287 4.2.7.2: a link without `rel` is `alternate`. An attribute absent from a `'string'`
@@ -107,8 +111,11 @@ function rssSiteLink(channel: Element): string {
 // FRICTION 2: entries of two formats have different shapes, so each gets an adapter. A schema
 // cannot say "title here, or title there".
 // Keys are per feed: a guid only has to be unique within its feed, and an entry may have none.
-function keyOf(feed: Feed, id: string, fallback: string): string {
-  return `${feed.url} ${id || fallback}`
+// Without an id, the key is built from what identifies the entry to a reader; whitespace in the
+// feed's markup is not part of it.
+function keyOf(feed: Feed, id: string, ...fallback: string[]): string {
+  const clean = (text: string): string => text.replace(/\s+/g, ' ').trim()
+  return `${feed.url} ${clean(id) || fallback.map(clean).join('|')}`
 }
 
 function rssEntry(feed: Feed, item: RssItem): Entry {
@@ -116,7 +123,13 @@ function rssEntry(feed: Feed, item: RssItem): Entry {
     element: item.$el,
     feed,
     get key() {
-      return keyOf(feed, item.guid || item.link, `${item.title}|${item.pubDate}`)
+      return keyOf(
+        feed,
+        item.guid.trim() || item.link.trim(),
+        item.title,
+        item.pubDate,
+        item.description.slice(0, 500),
+      )
     },
     get title() {
       return item.title
@@ -155,12 +168,14 @@ function atomEntryOf(feed: Feed, entry: AtomEntry, feedAuthor: () => string): En
     get key() {
       return keyOf(
         feed,
-        entry.id || alternateLink(entry.link.get()),
-        `${entry.title}|${entry.updated}`,
+        entry.id.trim() || alternateLink(entry.link.get()),
+        this.title,
+        entry.published || entry.updated,
+        this.summary.slice(0, 500),
       )
     },
     get title() {
-      return entry.title
+      return atomTextOf(entry.title[0]?.$el)
     },
     get link() {
       return alternateLink(entry.link.get())
@@ -239,7 +254,7 @@ export function parseFeed(url: string, text: string): Feed {
     const feed: Feed = {
       url,
       kind: 'atom',
-      title: atom.title,
+      title: atomTextOf(atom.title[0]?.$el),
       site: alternateLink(atom.link.get()),
       entries: entryList<AtomEntry>(atom.entry, (entry) =>
         atomEntryOf(feed, entry, () => atom.author[0]?.name ?? ''),
@@ -278,14 +293,25 @@ export function collectState(feeds: readonly Feed[]): SavedState {
 }
 
 /**
- * Decodes feed bytes with the charset the response names, else the one the XML declaration names.
+ * Decodes feed bytes: a byte order mark wins, then the charset the response names, then the one
+ * the XML declaration names, then UTF-8.
  *
  * `Response.text()` always decodes UTF-8, which garbles feeds in other encodings.
  */
 export function decodeFeed(bytes: ArrayBuffer, contentType: string | null): string {
+  const head = new Uint8Array(bytes.slice(0, 3))
+  const bom =
+    head[0] === 0xef && head[1] === 0xbb && head[2] === 0xbf
+      ? 'utf-8'
+      : head[0] === 0xff && head[1] === 0xfe
+        ? 'utf-16le'
+        : head[0] === 0xfe && head[1] === 0xff
+          ? 'utf-16be'
+          : undefined
   const declared =
-    /charset=["']?([\w-]+)/i.exec(contentType ?? '')?.[1] ??
-    /^\s*<\?xml[^>]*encoding=["']([\w-]+)["']/.exec(
+    bom ??
+    /charset\s*=\s*["']?([\w-]+)/i.exec(contentType ?? '')?.[1] ??
+    /^\s*<\?xml[^>]*encoding\s*=\s*["']([\w-]+)["']/.exec(
       new TextDecoder('latin1').decode(bytes.slice(0, 200)),
     )?.[1] ??
     'utf-8'

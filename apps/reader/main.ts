@@ -243,12 +243,17 @@ export async function mount(
     }
   }
 
+  // Each load gets a number; a load that finishes after a newer one started is dropped.
+  let latestLoad = 0
+
   async function load(): Promise<void> {
+    const current = ++latestLoad
     status.textContent = 'Loading…'
     const sources = await options.sources()
     const results = await Promise.allSettled(
       sources.map(async (source) => parseFeed(source.url, await options.fetchText(source))),
     )
+    if (current !== latestLoad) return
     const state = saved()
     feeds = []
     const errors: string[] = []

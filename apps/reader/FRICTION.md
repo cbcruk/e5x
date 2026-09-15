@@ -35,12 +35,13 @@ schema cannot hold:
 Related: #9 (heterogeneous children) covers different children under one name, not this. A
 schema that says "this field, or that path" would remove some of the adapter code.
 
-### 2b. An element with both attributes and text is not a leaf — workaround
+### 2b. An element with both attributes and text has no typed text — papercut
 
-An Atom text construct is `<summary type="html">…</summary>`: the `type` attribute decides how to
-read the text. A `'<string>'` leaf reads only the text, and a child collection
-(`summary: [{ type: 'string' }]`) reads only the attributes. The adapter takes both from
-`summary[0].$el`.
+An Atom text construct is `<title type="html">…</title>`: the `type` attribute decides how to
+read the text. A `'<string>'` leaf reads only the text. A child collection
+(`title: [{ type: 'string' }]`) types the attribute, and the member does give its text through
+`String(title[0])` (the `toString` hook), but that is untyped and not in the README. The adapter
+reads `title[0].$el` instead, since `type="xhtml"` needs the element anyway.
 
 ### 3. No concatenation of collections — workaround
 

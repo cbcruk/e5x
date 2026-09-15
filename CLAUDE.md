@@ -610,6 +610,9 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 - 리뷰 1회차에서 고친 것: 읽음 키에 피드 URL 포함(guid 충돌), 프록시가 upstream content-type을 믿지 않음
   (`application/xml` + `nosniff` + `sandbox` CSP, 바이트 전달 후 브라우저에서 charset 디코딩), 목록은 의도적 스냅숏이고
   같은 필터 재클릭은 `revision` attribute dep으로 재필터. FRICTION 4의 "entry마다 dep 필요"는 틀린 주장이었음(피드당 1개).
+- 리뷰 2회차에서 고친 것: 행 구독 해제 테스트가 사실상 없었음(작성자의 변이 실험이 `rows.reset`과 `bound.reset`을 함께
+  지워 다른 쪽이 잡은 것 — **변이는 하나씩**), id 없는 항목 키가 description만 있으면 여전히 충돌, Atom `<title>`도 text
+  construct(WordPress `type="html"`), xhtml의 script/style 텍스트, BOM 우선 디코딩, 겹친 새로고침은 최신 것만 반영.
 - #5는 이 앱을 **실제로 사용한 뒤** 기록을 요약해 닫는다(첫 PR은 `Part of #5`).
 
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (2026-09 채택)
