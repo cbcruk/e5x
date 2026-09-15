@@ -194,7 +194,7 @@ needs a custom parser and is not implemented.
 
 ## Demo
 
-`pnpm dev` opens a sales ledger where every value on the page is a subscription: a filtered,
+**Live: https://cbcruk.github.io/e5x/** — or `pnpm dev` locally. A sales ledger where every value on the page is a subscription: a filtered,
 sorted inventory table, reactive aggregates, a per-dept breakdown sharing views with the
 table, buttons that mutate the DOM with plain APIs (e5x still reacts), and the live model tree.
 

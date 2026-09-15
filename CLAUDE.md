@@ -442,6 +442,14 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 선택하지 않은 대안: 정적 추적 결과로 **자동 deps**(signals식 암묵 추적). Phase 10에서 명시적 deps를
 택했으므로 경고에 머묾. 자동화는 별도 결정.
 
+## 데모 배포 (GitHub Pages)
+
+- https://cbcruk.github.io/e5x/ — `.github/workflows/pages.yml`이 main push마다 typecheck → test →
+  `pnpm build:demo`(`vite.demo.config.ts`, 출력 `demo-dist/`) → Pages 배포. 테스트가 깨지면 배포 안 됨.
+- 라이브러리 빌드(`vite.config.ts`)와 설정 분리. `base: './'`라 서브패스(`/e5x/`)에서 동작.
+- Vite 앱 빌드가 `process.env.NODE_ENV`를 치환해 배포본에선 dev 체크가 제거됨(번들에 `process` 0회).
+- CI 재현성을 위해 `packageManager: pnpm@11.22.0` 고정.
+
 ## 알려진 약점 (정직하게)
 
 - bulk write read/write 비대칭 → typed에선 iteration 강제.
