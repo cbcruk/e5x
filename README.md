@@ -2,36 +2,36 @@
 
 Shape-matched reactive interface over the DOM, in the spirit of [E4X](https://en.wikipedia.org/wiki/ECMAScript_for_XML).
 
-The data's structure *is* the access path. No accessor verbs (`getItems()`, `.children()`,
+The data's structure _is_ the access path. No accessor verbs (`getItems()`, `.children()`,
 `findByType()`) in between — if the data has an `item`, you reach it with `.item`. The same
 path expression works for **read**, **write**, and **subscribe**.
 
 ```ts
-import { wrap } from 'e5x';
+import { wrap } from 'e5x'
 
 const sales = wrap(document.querySelector('sales')!, {
   vendor: 'string',
   item: [{ type: 'string', price: 'number', quantity: 'number' }],
-} as const);
+} as const)
 
 // read — the path matches the shape
-sales.vendor;                                     // "John"
-sales.item.$where({ type: 'carrot' })[0]!.price;  // 3  (typed: number)
-sales.item.$length.get();                         // 3
+sales.vendor // "John"
+sales.item.$where({ type: 'carrot' })[0]!.price // 3  (typed: number)
+sales.item.$length.get() // 3
 
 // a column over the whole set, with reactive aggregates
-sales.item.price;                                 // Column<number>
-sales.item.price.$sum.get();                      // 10
-sales.item.$sort('price', 'desc');                // live ordered collection
+sales.item.price // Column<number>
+sales.item.price.$sum.get() // 10
+sales.item.$sort('price', 'desc') // live ordered collection
 
 // write — same path
-sales.item.$where({ type: 'carrot' })[0]!.quantity = 4;
-sales.item.$push({ type: 'oranges', price: 4, quantity: 12 });
-delete sales.item[0];
+sales.item.$where({ type: 'carrot' })[0]!.quantity = 4
+sales.item.$push({ type: 'oranges', price: 4, quantity: 12 })
+delete sales.item[0]
 
 // subscribe — same path, nanostores atom shape (get / subscribe)
-sales.item.$where({ type: 'carrot' }).$length.subscribe((n) => render(n));
-sales.item.price.$sum.subscribe((total) => updateFooter(total));
+sales.item.$where({ type: 'carrot' }).$length.subscribe((n) => render(n))
+sales.item.price.$sum.subscribe((total) => updateFooter(total))
 ```
 
 ## Why
@@ -71,9 +71,9 @@ Everything e5x adds — `$where`, `$sort`, `$push`, `$deep`, `$length`, `$sum`, 
 starts with `$`, so a field called `length`, `sort`, or `push` is reached like any other:
 
 ```ts
-const album = wrap(el, { track: [{ title: 'string', length: 'number' }] } as const);
-album.track.length.$sum.get();   // total running time — the data field
-album.track.$length.get();       // number of tracks — the library
+const album = wrap(el, { track: [{ title: 'string', length: 'number' }] } as const)
+album.track.length.$sum.get() // total running time — the data field
+album.track.$length.get() // number of tracks — the library
 ```
 
 E4X drew the same line by making methods calls (`length()`), which a JS Proxy cannot
@@ -88,7 +88,9 @@ work before the first child exists — but an empty collection is still an objec
 truthy. Test for presence with `$length`, not truthiness:
 
 ```ts
-if (row.note.$length.get() > 0) { /* ... */ } // not: if (row.note)
+if (row.note.$length.get() > 0) {
+  /* ... */
+} // not: if (row.note)
 ```
 
 With a schema, missing leaves coerce instead (`''`, `NaN`, `false`).
@@ -101,15 +103,15 @@ with Svelte's `$store` and `derived`. (nanostores' own `computed` needs its inte
 `listen`/`eq`/epoch, so it does not accept them — use e5x's `computed`.)
 
 ```ts
-sales.item;                       // a collection: emits when members or order change
-sales.item.price.$sum;            // an aggregate: emits when the total changes
-sales.$.vendor;                   // one field of one element, as an atom
-item.subscribe((it) => paint(it)); // a wrapped element: emits on any change in its subtree
+sales.item // a collection: emits when members or order change
+sales.item.price.$sum // an aggregate: emits when the total changes
+sales.$.vendor // one field of one element, as an atom
+item.subscribe((it) => paint(it)) // a wrapped element: emits on any change in its subtree
 
-import { computed } from 'e5x';
+import { computed } from 'e5x'
 const stock = computed([view.price, view.quantity], (prices, qty) =>
   prices.reduce((total, p, i) => total + p * qty[i], 0),
-);
+)
 ```
 
 `element.$` mirrors the element's fields as atoms (Vue's `toRefs`): leaves become atoms, child
@@ -119,11 +121,11 @@ changes that land in the same tick.
 ## Sort & filter
 
 ```ts
-rows.$where({ dept: 'eng' });               // live filtered set
-rows.$where((r) => r.amount > 100);         // predicate over wrapped elements
-rows.$sort('amount', 'desc');               // typed field, descriptor-aware comparison
-rows.$sort((a, b) => b.amount - a.amount);  // comparator over wrapped elements
-rows.$deep('price');                        // descendant axis (E4X's `..`), always loose
+rows.$where({ dept: 'eng' }) // live filtered set
+rows.$where((r) => r.amount > 100) // predicate over wrapped elements
+rows.$sort('amount', 'desc') // typed field, descriptor-aware comparison
+rows.$sort((a, b) => b.amount - a.amount) // comparator over wrapped elements
+rows.$deep('price') // descendant axis (E4X's `..`), always loose
 ```
 
 A view recomputes when the DOM under it changes. A predicate or comparator that reads
@@ -131,12 +133,12 @@ anything else must declare it as **deps** — atoms whose change also recomputes
 notifies its subscribers, all the way down to columns and aggregates:
 
 ```ts
-const filters = wrap(filtersEl, { min: 'number', dir: 'string' } as const);
-const aboveMin = (r) => r.amount >= filters.min;
-const byAmount = (a, b) => (a.amount - b.amount) * (filters.dir === 'asc' ? 1 : -1);
+const filters = wrap(filtersEl, { min: 'number', dir: 'string' } as const)
+const aboveMin = (r) => r.amount >= filters.min
+const byAmount = (a, b) => (a.amount - b.amount) * (filters.dir === 'asc' ? 1 : -1)
 
-const view = rows.$where(aboveMin, [filters.$.min]).$sort(byAmount, [filters.$.dir]);
-filters.min = 100; // view, view.amount.$sum, … all update
+const view = rows.$where(aboveMin, [filters.$.min]).$sort(byAmount, [filters.$.dir])
+filters.min = 100 // view, view.amount.$sum, … all update
 ```
 
 A read left out of deps makes the view serve results for the old value. Outside production
@@ -144,7 +146,7 @@ A read left out of deps makes the view serve results for the old value. Outside 
 
 - **when the view computes**, if the function reads a field of an element outside the view's
   tree through e5x and no dep covers it — e.g. `$where predicate "aboveMin" reads
-  <filters>.min …`. A dep covers a read when it is that field's atom (`filters.$.min`) or an
+<filters>.min …`. A dep covers a read when it is that field's atom (`filters.$.min`) or an
   enclosing element (`filters`).
 - **when a cached result is served**, at most once per tick, e5x recomputes and compares. A
   different result with no DOM or dep change means the function read something e5x cannot
@@ -161,15 +163,15 @@ has no effect on it.
 `$push` and field writes put each value where the schema says it lives:
 
 ```ts
-const schema = { item: [{ type: 'string', note: '<string>' }] } as const;
-sales.item.$push({ type: 'tofu', note: 'Fresh' });
+const schema = { item: [{ type: 'string', note: '<string>' }] } as const
+sales.item.$push({ type: 'tofu', note: 'Fresh' })
 // <item type="tofu"><note>Fresh</note></item>
 ```
 
 Bulk write (typed) iterates wrapped elements:
 
 ```ts
-for (const row of rows.$where({ dept: 'eng' })) row.active = false;
+for (const row of rows.$where({ dept: 'eng' })) row.active = false
 ```
 
 ## XML literals (experimental)
@@ -178,18 +180,20 @@ An opt-in JSX compile step authors trees that `wrap()` consumes. Configure esbui
 `jsxFactory: 'h'`, `jsxFragment: 'Fragment'`.
 
 ```tsx
-import { h } from 'e5x/jsx';
-import { wrap } from 'e5x';
+import { h } from 'e5x/jsx'
+import { wrap } from 'e5x'
 
 const sales = wrap(
-  <sales vendor="John">
-    <item type="peas" price="4" />
-  </sales> as Element,
+  (
+    <sales vendor="John">
+      <item type="peas" price="4" />
+    </sales>
+  ) as Element,
   schema,
-);
+)
 ```
 
-This covers XML-literal *authoring* only. E4X operator syntax (`.()`, `..`, `@`, `for each`)
+This covers XML-literal _authoring_ only. E4X operator syntax (`.()`, `..`, `@`, `for each`)
 needs a custom parser and is not implemented.
 
 ## Demo

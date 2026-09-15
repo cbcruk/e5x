@@ -1,7 +1,7 @@
-import { createCollection } from './collection';
-import { weakCache } from './cache';
-import { derived, watch } from './reactive';
-import { DEV, noteRead, registerSource } from './dev';
+import { createCollection } from './collection'
+import { weakCache } from './cache'
+import { derived, watch } from './reactive'
+import { DEV, noteRead, registerSource } from './dev'
 import {
   assertValidDescriptor,
   childrenNamed,
@@ -12,7 +12,7 @@ import {
   isLeaf,
   isLibraryName,
   childDescriptor,
-} from './coerce';
+} from './coerce'
 import type {
   LooseCollection,
   LooseWrapped,
@@ -20,26 +20,26 @@ import type {
   ReadableAtom,
   ValidDescriptor,
   Wrapped,
-} from './types';
+} from './types'
 
-const cache = new WeakMap<Element, Map<NodeDescriptor | null, object>>();
+const cache = new WeakMap<Element, Map<NodeDescriptor | null, object>>()
 
 function attributeView(element: Element): Record<string, string | null> {
   return new Proxy({} as Record<string, string | null>, {
     get: (_target, key) => {
       if (typeof key !== 'string') {
-        return undefined;
+        return undefined
       }
-      if (DEV) noteRead(element, key);
-      return element.getAttribute(key);
+      if (DEV) noteRead(element, key)
+      return element.getAttribute(key)
     },
     set: (_target, key, value) => {
       if (typeof key === 'string') {
-        element.setAttribute(key, toDom(value));
+        element.setAttribute(key, toDom(value))
       }
-      return true;
+      return true
     },
-  });
+  })
 }
 
 function childCollection(
@@ -53,7 +53,7 @@ function childCollection(
     tagName: name,
     descriptor,
     compute: () => childrenNamed(parent, name),
-  });
+  })
 }
 
 function descendants(element: Element, name: string): LooseCollection {
@@ -63,133 +63,136 @@ function descendants(element: Element, name: string): LooseCollection {
     tagName: name,
     descriptor: null,
     compute: () => Array.from(element.querySelectorAll(name)),
-  });
+  })
 }
 
 export function wrapNode(element: Element, descriptor: NodeDescriptor | null): any {
-  let byDescriptor = cache.get(element);
+  let byDescriptor = cache.get(element)
   if (!byDescriptor) {
-    byDescriptor = new Map();
-    cache.set(element, byDescriptor);
+    byDescriptor = new Map()
+    cache.set(element, byDescriptor)
   }
-  const cached = byDescriptor.get(descriptor);
+  const cached = byDescriptor.get(descriptor)
   if (cached) {
-    return cached;
+    return cached
   }
 
   // Stable per element + name, so repeated path reads reuse one memoized collection.
-  const children = new Map<string, LooseCollection>();
-  const deep = weakCache<LooseCollection>();
+  const children = new Map<string, LooseCollection>()
+  const deep = weakCache<LooseCollection>()
   const childrenOf = (name: string, child: NodeDescriptor | null): LooseCollection => {
-    let collection = children.get(name);
+    let collection = children.get(name)
     if (!collection) {
-      collection = childCollection(element, name, child);
-      children.set(name, collection);
+      collection = childCollection(element, name, child)
+      children.set(name, collection)
     }
-    return collection;
-  };
+    return collection
+  }
 
   // The element as an atom: its value is the wrapped element, emitted on any subtree change.
-  const get = (): unknown => proxy;
+  const get = (): unknown => proxy
   const subscribe = (listener: (element: unknown) => void): (() => void) => {
-    listener(proxy);
-    return watch(element, () => listener(proxy));
-  };
+    listener(proxy)
+    return watch(element, () => listener(proxy))
+  }
 
   // `element.$.field` mirrors the fields as atoms. A child collection is already an atom.
-  const fieldAtoms = new Map<string, ReadableAtom<unknown>>();
+  const fieldAtoms = new Map<string, ReadableAtom<unknown>>()
   const fieldAtom = (name: string): unknown => {
-    if (childDescriptor(descriptor?.[name]) || (!descriptor?.[name] && childrenNamed(element, name).length > 0)) {
-      return proxy[name];
+    if (
+      childDescriptor(descriptor?.[name]) ||
+      (!descriptor?.[name] && childrenNamed(element, name).length > 0)
+    ) {
+      return proxy[name]
     }
-    let atom = fieldAtoms.get(name);
+    let atom = fieldAtoms.get(name)
     if (!atom) {
-      atom = derived(element, () => proxy[name]);
-      registerSource(atom, element, name);
-      fieldAtoms.set(name, atom);
+      atom = derived(element, () => proxy[name])
+      registerSource(atom, element, name)
+      fieldAtoms.set(name, atom)
     }
-    return atom;
-  };
+    return atom
+  }
   const mirror = new Proxy({} as Record<string, unknown>, {
     get: (_target, key) =>
       typeof key === 'string' && !isLibraryName(key) ? fieldAtom(key) : undefined,
-  });
+  })
 
   const proxy: any = new Proxy(element, {
     get(target, key) {
       if (key === Symbol.toPrimitive || key === 'valueOf') {
-        return () => target.textContent;
+        return () => target.textContent
       }
       if (key === 'toString') {
-        return () => target.textContent ?? '';
+        return () => target.textContent ?? ''
       }
       if (key === '$el') {
-        return target;
+        return target
       }
       if (key === '$attr') {
-        return attributeView(target);
+        return attributeView(target)
       }
       if (key === '$') {
-        return mirror;
+        return mirror
       }
       if (key === 'get') {
-        return get;
+        return get
       }
       if (key === 'subscribe') {
-        return subscribe;
+        return subscribe
       }
       if (key === '$deep') {
-        return (name: string): LooseCollection => deep.get(name, () => descendants(target, name));
+        return (name: string): LooseCollection => deep.get(name, () => descendants(target, name))
       }
       if (typeof key === 'symbol') {
-        return Reflect.get(target, key);
+        return Reflect.get(target, key)
       }
       if (isLibraryName(key)) {
-        return undefined;
+        return undefined
       }
-      if (DEV) noteRead(target, key);
+      if (DEV) noteRead(target, key)
 
-      const field = descriptor?.[key];
+      const field = descriptor?.[key]
       if (isLeaf(field)) {
-        return fromDom(readRaw(target, key), field);
+        return fromDom(readRaw(target, key), field)
       }
-      const child = childDescriptor(field);
+      const child = childDescriptor(field)
       if (child) {
-        return childrenOf(key, child);
+        return childrenOf(key, child)
       }
       if (childrenNamed(target, key).length > 0) {
-        return childrenOf(key, null);
+        return childrenOf(key, null)
       }
       if (target.hasAttribute(key)) {
-        return target.getAttribute(key);
+        return target.getAttribute(key)
       }
-      return childrenOf(key, null);
+      return childrenOf(key, null)
     },
     set(target, key, value) {
       if (typeof key === 'symbol') {
-        return Reflect.set(target, key, value);
+        return Reflect.set(target, key, value)
       }
       if (isLibraryName(key) || key === 'get' || key === 'subscribe') {
-        return false;
+        return false
       }
-      writeField(target, key, value, descriptor?.[key]);
-      return true;
+      writeField(target, key, value, descriptor?.[key])
+      return true
     },
-  });
+  })
 
-  registerSource(proxy, element);
-  byDescriptor.set(descriptor, proxy);
-  return proxy;
+  registerSource(proxy, element)
+  byDescriptor.set(descriptor, proxy)
+  return proxy
 }
 
-export function wrap(element: Element): LooseWrapped;
+export function wrap(element: Element): LooseWrapped
 export function wrap<const N extends NodeDescriptor>(
   element: Element,
   descriptor: N extends ValidDescriptor<N> ? N : ValidDescriptor<N>,
-): Wrapped<N>;
+): Wrapped<N>
 export function wrap(element: Element, descriptor?: NodeDescriptor): unknown {
   if (descriptor) {
-    assertValidDescriptor(descriptor);
+    assertValidDescriptor(descriptor)
   }
-  return wrapNode(element, descriptor ?? null);
+  return wrapNode(element, descriptor ?? null)
 }

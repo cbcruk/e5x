@@ -1,5 +1,5 @@
-export { wrap } from './wrap';
-export { computed } from './computed';
+export { wrap } from './wrap'
+export { computed } from './computed'
 export type {
   Wrapped,
   Collection,
@@ -17,4 +17,4 @@ export type {
   ReadableAtom,
   LooseWrapped,
   LooseCollection,
-} from './types';
+} from './types'

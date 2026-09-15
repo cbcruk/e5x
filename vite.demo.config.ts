@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite-plus';
+import { defineConfig } from 'vite-plus'
 
 // Builds the demo page (index.html + demo/) as a static site for GitHub Pages. The library
 // build lives in vite.config.ts.
@@ -13,4 +13,4 @@ export default defineConfig({
     outDir: 'demo-dist',
     emptyOutDir: true,
   },
-});
+})

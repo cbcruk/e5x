@@ -1,6 +1,6 @@
-import { wrapNode } from './wrap';
-import { readRaw, isLeaf, fromDom } from './coerce';
-import type { LooseWrapped, NodeDescriptor } from './types';
+import { wrapNode } from './wrap'
+import { readRaw, isLeaf, fromDom } from './coerce'
+import type { LooseWrapped, NodeDescriptor } from './types'
 
 export function matches(
   element: Element,
@@ -8,14 +8,14 @@ export function matches(
   descriptor: NodeDescriptor | null,
 ): boolean {
   if (typeof predicate === 'function') {
-    return predicate(wrapNode(element, descriptor));
+    return predicate(wrapNode(element, descriptor))
   }
   return Object.entries(predicate).every(([key, value]) => {
-    const raw = readRaw(element, key);
-    const field = descriptor?.[key];
+    const raw = readRaw(element, key)
+    const field = descriptor?.[key]
     if (isLeaf(field)) {
-      return fromDom(raw, field) === value;
+      return fromDom(raw, field) === value
     }
-    return raw === String(value);
-  });
+    return raw === String(value)
+  })
 }

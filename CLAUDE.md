@@ -256,13 +256,15 @@ CLAUDE.md가 "컴파일 스텝 수용 의향" 게이트로 둔 영역. **무엇�
 
 ```tsx
 const sales = wrap(
-  <sales vendor="John">
-    <item type="peas" price="4" />
-    <item type="carrot" price="3" />
-  </sales> as Element,
+  (
+    <sales vendor="John">
+      <item type="peas" price="4" />
+      <item type="carrot" price="3" />
+    </sales>
+  ) as Element,
   schema,
-);
-sales.item.price.$sum.get(); // 7
+)
+sales.item.price.$sum.get() // 7
 ```
 
 - JSX pragma(`h`/`Fragment`)로 XML literal → 실제 DOM → `wrap()`. esbuild jsxFactory +
@@ -305,12 +307,12 @@ npm publish는 실제 소비처가 생기면 — "이게 없으면 매일 불편
 
 측정 먼저 (happy-dom, 2000행):
 
-| 시나리오 | 이전 | 이후 |
-|---|---|---|
-| held `$where().$sort()` 뷰에 `v[i]` × N | 16,157ms (predicate 400만 회) | 9ms (2000회) |
-| `rows.n[i]` 열 순회 × N | 2,172ms | 3ms |
-| `$sort('n').get()` × 20 (새 뷰) | 283ms | 32ms |
-| 구독 20개 × attr write | 40,000 predicate/write | 동일 (독립 뷰라 공유 없음) |
+| 시나리오                                | 이전                          | 이후                       |
+| --------------------------------------- | ----------------------------- | -------------------------- |
+| held `$where().$sort()` 뷰에 `v[i]` × N | 16,157ms (predicate 400만 회) | 9ms (2000회)               |
+| `rows.n[i]` 열 순회 × N                 | 2,172ms                       | 3ms                        |
+| `$sort('n').get()` × 20 (새 뷰)         | 283ms                         | 32ms                       |
+| 구독 20개 × attr write                  | 40,000 predicate/write        | 동일 (독립 뷰라 공유 없음) |
 
 구조:
 
@@ -340,13 +342,13 @@ Column이 아니라 Collection을 반환했다(타입은 Column). 이제 schema�
 
 측정 (happy-dom):
 
-| 시나리오 | 이전 | 이후 |
-|---|---|---|
-| 같은 predicate 함수로 뷰를 20곳에서 생성·구독 | predicate 40,000/write | 2,000/write |
-| 같은 객체 predicate 20곳, write 10회 | 125ms | 29ms |
-| disjoint 트리 1000개 구독, 한 트리에 write 200회 | 1,981ms | 292ms (상당 부분 await 오버헤드) |
-| 새 `$sort('n').get()` × 20 | 32ms | 6ms (정렬 뷰 공유) |
-| inline arrow predicate 20곳 | 40,000/write | 동일 — 원리상 공유 불가 |
+| 시나리오                                         | 이전                   | 이후                             |
+| ------------------------------------------------ | ---------------------- | -------------------------------- |
+| 같은 predicate 함수로 뷰를 20곳에서 생성·구독    | predicate 40,000/write | 2,000/write                      |
+| 같은 객체 predicate 20곳, write 10회             | 125ms                  | 29ms                             |
+| disjoint 트리 1000개 구독, 한 트리에 write 200회 | 1,981ms                | 292ms (상당 부분 await 오버헤드) |
+| 새 `$sort('n').get()` × 20                       | 32ms                   | 6ms (정렬 뷰 공유)               |
+| inline arrow predicate 20곳                      | 40,000/write           | 동일 — 원리상 공유 불가          |
 
 구조:
 
@@ -395,13 +397,13 @@ Column이 아니라 Collection을 반환했다(타입은 Column). 이제 schema�
 
 ## Phase 10: API 공백 5가지 해소 — **완료** (`pnpm test` 66/66, `test/atoms.test.ts`)
 
-| 공백 | 결정 | 근거 |
-|---|---|---|
-| 1. 원소 필드 atom | `element.$.field` → `ReadableAtom` (child collection은 자기 자신) | Vue `toRefs`: 같은 모양, atom 값 |
-| 3. 행/셀 구독 | wrapped element 자체가 atom — subtree 변경 시 자기 자신을 emit | 노드별 listener 인덱스로 행 N개 구독도 자기 행 변경에만 깨어남 |
-| 2. atom 조합 | `computed(atoms, fn)` export, 같은 tick 변경은 1회 emit | nanostores `computed` 모양 (nanostores 자체는 호환 불가 — 위 정정) |
-| 4. 외부 상태 predicate | 함수 `$where(fn, deps)` / `$sort(cmp, deps)` | React deps, Svelte `derived(stores)` |
-| 5. child text 쓰기 | schema `'<string>'` = child element 저장 | schema가 이미 타입·변환의 단일 진실 |
+| 공백                   | 결정                                                              | 근거                                                               |
+| ---------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 1. 원소 필드 atom      | `element.$.field` → `ReadableAtom` (child collection은 자기 자신) | Vue `toRefs`: 같은 모양, atom 값                                   |
+| 3. 행/셀 구독          | wrapped element 자체가 atom — subtree 변경 시 자기 자신을 emit    | 노드별 listener 인덱스로 행 N개 구독도 자기 행 변경에만 깨어남     |
+| 2. atom 조합           | `computed(atoms, fn)` export, 같은 tick 변경은 1회 emit           | nanostores `computed` 모양 (nanostores 자체는 호환 불가 — 위 정정) |
+| 4. 외부 상태 predicate | 함수 `$where(fn, deps)` / `$sort(cmp, deps)`                      | React deps, Svelte `derived(stores)`                               |
+| 5. child text 쓰기     | schema `'<string>'` = child element 저장                          | schema가 이미 타입·변환의 단일 진실                                |
 
 deps 설계:
 

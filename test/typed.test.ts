@@ -1,92 +1,95 @@
-import { describe, it, expect } from 'vite-plus/test';
-import { wrap } from '../src/index';
+import { describe, it, expect } from 'vite-plus/test'
+import { wrap } from '../src/index'
 
 const salesSchema = {
   vendor: 'string',
   item: [{ type: 'string', price: 'number', quantity: 'number' }],
-} as const;
+} as const
 
 function setup(html: string): Element {
-  document.body.innerHTML = html;
-  return document.body.firstElementChild!;
+  document.body.innerHTML = html
+  return document.body.firstElementChild!
 }
 
 function flush(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
+  return new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 describe('schema-typed reads coerce by declared type', () => {
   it('returns string / number per the descriptor', () => {
     const sales = wrap(
-      setup(
-        `<sales vendor="John"><item type="carrot" price="3" quantity="10"></item></sales>`,
-      ),
+      setup(`<sales vendor="John"><item type="carrot" price="3" quantity="10"></item></sales>`),
       salesSchema,
-    );
+    )
 
-    const vendor: string = sales.vendor;
-    const price: number = sales.item.$where({ type: 'carrot' })[0]!.price;
-    const quantity: number = sales.item[0]!.quantity;
+    const vendor: string = sales.vendor
+    const price: number = sales.item.$where({ type: 'carrot' })[0]!.price
+    const quantity: number = sales.item[0]!.quantity
 
-    expect(vendor).toBe('John');
-    expect(price).toBe(3);
-    expect(quantity).toBe(10);
-  });
-});
+    expect(vendor).toBe('John')
+    expect(price).toBe(3)
+    expect(quantity).toBe(10)
+  })
+})
 
 describe('boolean coercion both directions', () => {
   it('reads as boolean and writes back as a DOM string', () => {
     const todos = wrap(setup(`<todos><todo done="false" text="a"></todo></todos>`), {
       todo: [{ done: 'boolean', text: 'string' }],
-    } as const);
+    } as const)
 
-    const todo = todos.todo[0]!;
-    const done: boolean = todo.done;
-    expect(done).toBe(false);
+    const todo = todos.todo[0]!
+    const done: boolean = todo.done
+    expect(done).toBe(false)
 
-    todo.done = true;
-    expect(todos.todo[0]!.$el.getAttribute('done')).toBe('true');
-    expect(todos.todo.$where({ done: false }).$length.get()).toBe(0);
-    expect(todos.todo.$where({ done: true }).$length.get()).toBe(1);
-  });
-});
+    todo.done = true
+    expect(todos.todo[0]!.$el.getAttribute('done')).toBe('true')
+    expect(todos.todo.$where({ done: false }).$length.get()).toBe(0)
+    expect(todos.todo.$where({ done: true }).$length.get()).toBe(1)
+  })
+})
 
 describe('push coerces typed values to the DOM', () => {
   it('writes attributes and round-trips through coercion', () => {
-    const sales = wrap(setup(`<sales></sales>`), salesSchema);
+    const sales = wrap(setup(`<sales></sales>`), salesSchema)
 
-    sales.item.$push({ type: 'oranges', price: 4, quantity: 12 });
-    expect(sales.item[0]!.$el.getAttribute('price')).toBe('4');
+    sales.item.$push({ type: 'oranges', price: 4, quantity: 12 })
+    expect(sales.item[0]!.$el.getAttribute('price')).toBe('4')
 
-    const quantity: number = sales.item.$where({ type: 'oranges' })[0]!.quantity;
-    expect(quantity).toBe(12);
-  });
-});
+    const quantity: number = sales.item.$where({ type: 'oranges' })[0]!.quantity
+    expect(quantity).toBe(12)
+  })
+})
 
 describe('delete through the same typed path', () => {
   it('removes by index and rejects assignment', () => {
     const sales = wrap(
-      setup(`<sales><item type="a" price="1" quantity="1"></item><item type="b" price="2" quantity="2"></item></sales>`),
+      setup(
+        `<sales><item type="a" price="1" quantity="1"></item><item type="b" price="2" quantity="2"></item></sales>`,
+      ),
       salesSchema,
-    );
-    delete sales.item[0];
-    expect(sales.item.type.get()).toEqual(['b']);
+    )
+    delete sales.item[0]
+    expect(sales.item.type.get()).toEqual(['b'])
 
     // @ts-expect-error — only wrapped elements type-check, and even those throw
-    expect(() => (sales.item[0] = { type: 'x' })).toThrow(TypeError);
-    expect(() => (sales.item[0] = sales.item[0]!)).toThrow(TypeError);
-  });
-});
+    expect(() => (sales.item[0] = { type: 'x' })).toThrow(TypeError)
+    expect(() => (sales.item[0] = sales.item[0]!)).toThrow(TypeError)
+  })
+})
 
 describe('typed subscribe', () => {
   it('emits numbers without annotation', async () => {
-    const sales = wrap(setup(`<sales><item type="a" price="1" quantity="1"></item></sales>`), salesSchema);
-    const seen: number[] = [];
-    sales.item.$length.subscribe((n) => seen.push(n));
-    expect(seen).toEqual([1]);
+    const sales = wrap(
+      setup(`<sales><item type="a" price="1" quantity="1"></item></sales>`),
+      salesSchema,
+    )
+    const seen: number[] = []
+    sales.item.$length.subscribe((n) => seen.push(n))
+    expect(seen).toEqual([1])
 
-    sales.item.$push({ type: 'b', price: 2, quantity: 2 });
-    await flush();
-    expect(seen.at(-1)).toBe(2);
-  });
-});
+    sales.item.$push({ type: 'b', price: 2, quantity: 2 })
+    await flush()
+    expect(seen.at(-1)).toBe(2)
+  })
+})

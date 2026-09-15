@@ -6,68 +6,282 @@
     <title>e5x — sales ledger</title>
     <style>
       :root {
-        --bg: #f6f5f2; --card: #fff; --ink: #1c1b19; --muted: #6b6860; --line: #e4e1da;
-        --accent: #2f5bd3; --accent-soft: #e6ecfb; --code: #f1efe9; --warn: #b3261e;
+        --bg: #f6f5f2;
+        --card: #fff;
+        --ink: #1c1b19;
+        --muted: #6b6860;
+        --line: #e4e1da;
+        --accent: #2f5bd3;
+        --accent-soft: #e6ecfb;
+        --code: #f1efe9;
+        --warn: #b3261e;
         color-scheme: light dark;
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg: #151513; --card: #1e1e1b; --ink: #ecebe6; --muted: #9c998f; --line: #33322e;
-          --accent: #8aa8ff; --accent-soft: #23293a; --code: #262622; --warn: #ff8a80;
+          --bg: #151513;
+          --card: #1e1e1b;
+          --ink: #ecebe6;
+          --muted: #9c998f;
+          --line: #33322e;
+          --accent: #8aa8ff;
+          --accent-soft: #23293a;
+          --code: #262622;
+          --warn: #ff8a80;
         }
       }
-      * { box-sizing: border-box; }
-      body { margin: 0; padding: 2rem 1rem 4rem; background: var(--bg); color: var(--ink);
-        font: 14px/1.5 system-ui, sans-serif; }
-      .wrap { max-width: 72rem; margin: 0 auto; }
-      header { display: flex; flex-wrap: wrap; gap: 1rem; align-items: end; justify-content: space-between; margin-bottom: 1.5rem; }
-      h1 { margin: 0; font-size: 1.5rem; }
-      h1 small { display: block; font-size: 0.85rem; font-weight: 400; color: var(--muted); }
-      h2 { margin: 0 0 0.25rem; font-size: 0.95rem; }
-      .lede { margin: 0 0 0.75rem; color: var(--muted); font-size: 0.85rem; }
-      code, pre { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
-      code.expr { display: inline-block; background: var(--code); padding: 0.1rem 0.4rem; border-radius: 4px; color: var(--ink); overflow-wrap: anywhere; }
-      .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(28rem, 100%), 1fr)); }
-      .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; min-width: 0; }
-      .wide { grid-column: 1 / -1; }
-      label { color: var(--muted); font-size: 0.85rem; }
-      input, select, button { font: inherit; color: inherit; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.5rem; }
-      button { cursor: pointer; }
-      button code { color: var(--muted); font-size: 11px; margin-left: 0.35rem; }
-      button:hover { border-color: var(--accent); }
-      .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.5rem 0; }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 2rem 1rem 4rem;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          14px/1.5 system-ui,
+          sans-serif;
+      }
+      .wrap {
+        max-width: 72rem;
+        margin: 0 auto;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        align-items: end;
+        justify-content: space-between;
+        margin-bottom: 1.5rem;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.5rem;
+      }
+      h1 small {
+        display: block;
+        font-size: 0.85rem;
+        font-weight: 400;
+        color: var(--muted);
+      }
+      h2 {
+        margin: 0 0 0.25rem;
+        font-size: 0.95rem;
+      }
+      .lede {
+        margin: 0 0 0.75rem;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      code,
+      pre {
+        font:
+          12px/1.5 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+      }
+      code.expr {
+        display: inline-block;
+        background: var(--code);
+        padding: 0.1rem 0.4rem;
+        border-radius: 4px;
+        color: var(--ink);
+        overflow-wrap: anywhere;
+      }
+      .grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(min(28rem, 100%), 1fr));
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 1rem;
+        min-width: 0;
+      }
+      .wide {
+        grid-column: 1 / -1;
+      }
+      label {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+        color: inherit;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 0.3rem 0.5rem;
+      }
+      button {
+        cursor: pointer;
+      }
+      button code {
+        color: var(--muted);
+        font-size: 11px;
+        margin-left: 0.35rem;
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+        margin: 0.5rem 0;
+      }
 
-      .stats { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
-      .stat { border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem 0.75rem; }
-      .stat strong { display: block; font-size: 1.3rem; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .stat code { font-size: 11px; color: var(--muted); }
+      .stats {
+        display: grid;
+        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+      }
+      .stat {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0.6rem 0.75rem;
+      }
+      .stat strong {
+        display: block;
+        font-size: 1.3rem;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .stat code {
+        font-size: 11px;
+        color: var(--muted);
+      }
 
-      .table-scroll { overflow-x: auto; }
-      table { border-collapse: collapse; width: 100%; min-width: 40rem; }
-      th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--line); }
-      th { font-size: 0.8rem; color: var(--muted); font-weight: 500; }
-      th[data-sort] { cursor: pointer; user-select: none; }
-      th[aria-sort='ascending']::after { content: ' ▲'; }
-      th[aria-sort='descending']::after { content: ' ▼'; }
-      td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-      td.fit, th.fit { width: 1%; white-space: nowrap; }
-      td input[type='number'] { width: 5.5rem; text-align: right; }
-      td.note { color: var(--muted); font-style: italic; }
-      .del { border: none; background: none; color: var(--warn); }
+      .table-scroll {
+        overflow-x: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        min-width: 40rem;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 0.35rem 0.5rem;
+        border-bottom: 1px solid var(--line);
+      }
+      th {
+        font-size: 0.8rem;
+        color: var(--muted);
+        font-weight: 500;
+      }
+      th[data-sort] {
+        cursor: pointer;
+        user-select: none;
+      }
+      th[aria-sort='ascending']::after {
+        content: ' ▲';
+      }
+      th[aria-sort='descending']::after {
+        content: ' ▼';
+      }
+      td.num,
+      th.num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      td.fit,
+      th.fit {
+        width: 1%;
+        white-space: nowrap;
+      }
+      td input[type='number'] {
+        width: 5.5rem;
+        text-align: right;
+      }
+      td.note {
+        color: var(--muted);
+        font-style: italic;
+      }
+      .del {
+        border: none;
+        background: none;
+        color: var(--warn);
+      }
 
-      .bars { display: grid; gap: 0.5rem; }
-      .bar { display: grid; grid-template-columns: 5rem 1fr 3rem; gap: 0.5rem; align-items: center; padding: 0.2rem 0.3rem; border-radius: 6px; }
-      button.bar { width: 100%; text-align: left; border: 1px solid transparent; background: none; }
-      .bar.selected { background: var(--accent-soft); border-color: var(--accent); }
-      pre.expr { margin: 0 0 0.75rem; padding: 0.5rem 0.75rem; background: var(--code); border-radius: 6px; overflow-x: auto; }
-      .bar .track, .bar .fill { display: block; }
-      .bar .track { height: 0.6rem; background: var(--code); border-radius: 99px; overflow: hidden; }
-      .bar .fill { height: 100%; background: var(--accent); width: 0; transition: width 200ms; }
-      .bar .n { text-align: right; font-variant-numeric: tabular-nums; }
+      .bars {
+        display: grid;
+        gap: 0.5rem;
+      }
+      .bar {
+        display: grid;
+        grid-template-columns: 5rem 1fr 3rem;
+        gap: 0.5rem;
+        align-items: center;
+        padding: 0.2rem 0.3rem;
+        border-radius: 6px;
+      }
+      button.bar {
+        width: 100%;
+        text-align: left;
+        border: 1px solid transparent;
+        background: none;
+      }
+      .bar.selected {
+        background: var(--accent-soft);
+        border-color: var(--accent);
+      }
+      pre.expr {
+        margin: 0 0 0.75rem;
+        padding: 0.5rem 0.75rem;
+        background: var(--code);
+        border-radius: 6px;
+        overflow-x: auto;
+      }
+      .bar .track,
+      .bar .fill {
+        display: block;
+      }
+      .bar .track {
+        height: 0.6rem;
+        background: var(--code);
+        border-radius: 99px;
+        overflow: hidden;
+      }
+      .bar .fill {
+        height: 100%;
+        background: var(--accent);
+        width: 0;
+        transition: width 200ms;
+      }
+      .bar .n {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
 
-      .outside button { display: block; width: 100%; text-align: left; margin-bottom: 0.5rem; }
-      .outside button code { display: block; color: var(--muted); font-size: 11px; }
-      pre#xml { margin: 0; max-height: 26rem; overflow: auto; background: var(--code); padding: 0.75rem; border-radius: 8px; }
+      .outside button {
+        display: block;
+        width: 100%;
+        text-align: left;
+        margin-bottom: 0.5rem;
+      }
+      .outside button code {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      pre#xml {
+        margin: 0;
+        max-height: 26rem;
+        overflow: auto;
+        background: var(--code);
+        padding: 0.75rem;
+        border-radius: 8px;
+      }
     </style>
   </head>
   <body>
@@ -76,11 +290,17 @@
 
     <!-- The model: plain DOM, server-rendered. e5x reads and writes it in place. -->
     <sales hidden vendor="John's Market">
-      <item type="carrot" dept="produce" price="3" quantity="10" organic="true"><note>Local farm</note></item>
+      <item type="carrot" dept="produce" price="3" quantity="10" organic="true"
+        ><note>Local farm</note></item
+      >
       <item type="peas" dept="produce" price="4" quantity="6" organic="false"></item>
-      <item type="milk" dept="dairy" price="5" quantity="20" organic="false"><note>Keep cold</note></item>
+      <item type="milk" dept="dairy" price="5" quantity="20" organic="false"
+        ><note>Keep cold</note></item
+      >
       <item type="cheese" dept="dairy" price="12" quantity="4" organic="true"></item>
-      <item type="bread" dept="bakery" price="6" quantity="8" organic="false"><note>Baked daily</note></item>
+      <item type="bread" dept="bakery" price="6" quantity="8" organic="false"
+        ><note>Baked daily</note></item
+      >
     </sales>
 
     <div class="wrap">
@@ -89,7 +309,9 @@
           <span id="vendorTitle"></span>
           <small>e5x — every value on this page is a subscription to a DOM tree</small>
         </h1>
-        <label>vendor <code class="expr">sales.$.vendor</code> / <code class="expr">sales.vendor = value</code><br />
+        <label
+          >vendor <code class="expr">sales.$.vendor</code> /
+          <code class="expr">sales.vendor = value</code><br />
           <input id="vendor" />
         </label>
       </header>
@@ -97,26 +319,52 @@
       <main class="grid">
         <section class="card wide">
           <h2>Current view</h2>
-          <p class="lede">One view for the page's lifetime; it recomputes when the data or its deps change.</p>
-          <pre class="expr">const view = sales.item
+          <p class="lede">
+            One view for the page's lifetime; it recomputes when the data or its deps change.
+          </p>
+          <pre class="expr">
+const view = sales.item
   .$where(matchesFilters, [filters.$.dept, filters.$.organic, filters.$.search])
   .$sort(bySortField, [filters.$.sort, filters.$.direction])</pre>
           <div class="stats">
-            <div class="stat"><span>items</span><strong id="statCount"></strong><code>view.$length</code></div>
-            <div class="stat"><span>units</span><strong id="statUnits"></strong><code>view.quantity.$sum</code></div>
-            <div class="stat"><span>avg price</span><strong id="statAvg"></strong><code>view.price.$avg</code></div>
-            <div class="stat"><span>price range</span><strong id="statRange"></strong><code>view.price.$min<wbr /> / $max</code></div>
-            <div class="stat"><span>stock value</span><strong id="statValue"></strong><code>view.price ×<wbr /> view.quantity</code></div>
-            <div class="stat"><span>notes (all)</span><strong id="statNotes"></strong><code>sales.$deep('note')<wbr />.$length</code></div>
+            <div class="stat">
+              <span>items</span><strong id="statCount"></strong><code>view.$length</code>
+            </div>
+            <div class="stat">
+              <span>units</span><strong id="statUnits"></strong><code>view.quantity.$sum</code>
+            </div>
+            <div class="stat">
+              <span>avg price</span><strong id="statAvg"></strong><code>view.price.$avg</code>
+            </div>
+            <div class="stat">
+              <span>price range</span><strong id="statRange"></strong
+              ><code>view.price.$min<wbr /> / $max</code>
+            </div>
+            <div class="stat">
+              <span>stock value</span><strong id="statValue"></strong
+              ><code>view.price ×<wbr /> view.quantity</code>
+            </div>
+            <div class="stat">
+              <span>notes (all)</span><strong id="statNotes"></strong
+              ><code>sales.$deep('note')<wbr />.$length</code>
+            </div>
           </div>
         </section>
 
         <section class="card wide">
           <h2>Inventory</h2>
-          <p class="lede">Rows come from <code class="expr">view.subscribe</code>; each row repaints from
-            <code class="expr">item.subscribe</code>. Controls write <code class="expr">filters.dept = …</code>.</p>
+          <p class="lede">
+            Rows come from <code class="expr">view.subscribe</code>; each row repaints from
+            <code class="expr">item.subscribe</code>. Controls write
+            <code class="expr">filters.dept = …</code>.
+          </p>
           <div class="row">
-            <label>dept <select id="dept"><option value="">all</option></select></label>
+            <label
+              >dept
+              <select id="dept">
+                <option value="">all</option>
+              </select></label
+            >
             <label><input id="organic" type="checkbox" /> organic only</label>
             <label>search <input id="search" placeholder="type…" /></label>
           </div>
@@ -137,7 +385,9 @@
             </table>
           </div>
           <div class="row">
-            <button id="bulkOrganic">mark view organic <code>for (item of view) item.organic = true</code></button>
+            <button id="bulkOrganic">
+              mark view organic <code>for (item of view) item.organic = true</code>
+            </button>
             <button id="bulkPrice">+10% price <code>item.price = item.price * 1.1</code></button>
           </div>
           <form id="add" class="row">
@@ -152,24 +402,36 @@
 
         <section class="card">
           <h2>Units by dept</h2>
-          <p class="lede"><code class="expr">sales.item.$where({ dept }).quantity.$sum</code> — asking the same
-            path anywhere returns the same view. Click a bar to filter.</p>
+          <p class="lede">
+            <code class="expr">sales.item.$where({ dept }).quantity.$sum</code> — asking the same
+            path anywhere returns the same view. Click a bar to filter.
+          </p>
           <div class="bars" id="bars"></div>
         </section>
 
         <section class="card outside">
           <h2>Outside writes</h2>
-          <p class="lede">Plain DOM APIs, no e5x. Everything above still updates — the DOM is the source of truth.</p>
-          <button id="restock">restock a random item <code>el.setAttribute('quantity', …)</code></button>
-          <button id="editNote">rewrite a note's text node <code>note.firstChild.data = …</code></button>
+          <p class="lede">
+            Plain DOM APIs, no e5x. Everything above still updates — the DOM is the source of truth.
+          </p>
+          <button id="restock">
+            restock a random item <code>el.setAttribute('quantity', …)</code>
+          </button>
+          <button id="editNote">
+            rewrite a note's text node <code>note.firstChild.data = …</code>
+          </button>
           <button id="removeLast">remove the last item <code>el.remove()</code></button>
-          <button id="importJsx">import items authored in JSX <code>salesEl.append(&lt;item …/&gt;)</code></button>
+          <button id="importJsx">
+            import items authored in JSX <code>salesEl.append(&lt;item …/&gt;)</code>
+          </button>
         </section>
 
         <section class="card wide">
           <h2>The model, live</h2>
-          <p class="lede"><code class="expr">filters.subscribe</code> + <code class="expr">sales.subscribe</code>
-            — both trees, serialized.</p>
+          <p class="lede">
+            <code class="expr">filters.subscribe</code> +
+            <code class="expr">sales.subscribe</code> — both trees, serialized.
+          </p>
           <pre id="xml"></pre>
         </section>
       </main>
