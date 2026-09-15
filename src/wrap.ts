@@ -67,6 +67,18 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
     return cached;
   }
 
+  // Stable per element + name, so repeated path reads reuse one memoized collection.
+  const children = new Map<string, LooseCollection>();
+  const deep = new Map<string, LooseCollection>();
+  const childrenOf = (name: string, child: NodeDescriptor | null): LooseCollection => {
+    let collection = children.get(name);
+    if (!collection) {
+      collection = childCollection(element, name, child);
+      children.set(name, collection);
+    }
+    return collection;
+  };
+
   const proxy = new Proxy(element, {
     get(target, key) {
       if (key === Symbol.toPrimitive || key === 'valueOf') {
@@ -82,7 +94,14 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
         return attributeView(target);
       }
       if (key === '$deep') {
-        return (name: string) => descendants(target, name);
+        return (name: string): LooseCollection => {
+          let collection = deep.get(name);
+          if (!collection) {
+            collection = descendants(target, name);
+            deep.set(name, collection);
+          }
+          return collection;
+        };
       }
       if (typeof key === 'symbol') {
         return Reflect.get(target, key);
@@ -97,15 +116,15 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
       }
       const child = childDescriptor(field);
       if (child) {
-        return childCollection(target, key, child);
+        return childrenOf(key, child);
       }
       if (childrenNamed(target, key).length > 0) {
-        return childCollection(target, key, null);
+        return childrenOf(key, null);
       }
       if (target.hasAttribute(key)) {
         return target.getAttribute(key);
       }
-      return childCollection(target, key, null);
+      return childrenOf(key, null);
     },
     set(target, key, value) {
       if (typeof key === 'symbol') {

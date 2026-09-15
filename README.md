@@ -51,6 +51,9 @@ at that empty seat, with a reactivity layer E4X never had.
   (`rows.amount` → `Column<number>` with `$sum / $avg / $min / $max / $values / $length`).
 - A single `MutationObserver` drives every live set; subtrees that a mutation does not touch
   are skipped.
+- Reads are memoized per DOM version: holding a view and indexing into it is O(1) per read
+  until the subtree changes. Pending mutations are pulled synchronously, so a read right
+  after a write is never stale.
 
 ### Unified namespace
 
@@ -93,6 +96,14 @@ rows.$where((r) => r.amount > 100);         // predicate over wrapped elements
 rows.$sort('amount', 'desc');               // typed field, descriptor-aware comparison
 rows.$sort((a, b) => b.amount - a.amount);  // comparator over wrapped elements
 rows.$deep('price');                        // descendant axis (E4X's `..`), always loose
+```
+
+A view recomputes only when the DOM under it changes, so predicates and comparators must
+depend on the element alone. If a filter reads outside state, build a new view when that
+state changes:
+
+```ts
+rows.$where((r) => r.amount > min);         // re-create when `min` changes — it is not tracked
 ```
 
 Bulk write (typed) iterates wrapped elements:

@@ -297,6 +297,41 @@ npm publish는 실제 소비처가 생기면 — "이게 없으면 매일 불편
   빈 상태에서 시작하는 loose `$push`/`subscribe`가 이것에 의존. 존재 확인은 `$length.get()`으로
   (README에 문서화).
 
+## Phase 7: 읽기 경로 메모이제이션 — **완료** (`pnpm test` 42/42, `test/memo.test.ts`)
+
+측정 먼저 (happy-dom, 2000행):
+
+| 시나리오 | 이전 | 이후 |
+|---|---|---|
+| held `$where().$sort()` 뷰에 `v[i]` × N | 16,157ms (predicate 400만 회) | 9ms (2000회) |
+| `rows.n[i]` 열 순회 × N | 2,172ms | 3ms |
+| `$sort('n').get()` × 20 (새 뷰) | 283ms | 32ms |
+| 구독 20개 × attr write | 40,000 predicate/write | 동일 (독립 뷰라 공유 없음) |
+
+구조:
+
+- **노드별 version** (`reactive.ts`): observe 중인 노드의 subtree에 mutation이 오면 조상을 타고
+  올라가며 version++. `memo(node, compute)`는 version이 같으면 캐시 반환.
+- **동기 쓰기 후 읽기**: MO는 비동기 → 읽을 때마다 `observer.takeRecords()`로 pending을 끌어와
+  version을 올린다. 구독자 통지는 microtask로 유지.
+- 구독자 relevance가 `affects(node, records)` O(records)에서 version 비교 O(1)로 바뀜
+  (Phase 4의 남은 한계 해소).
+- `characterData: true` 추가 — child text 필드를 text node로 고치는 경우가 캐시를 낡게 만들기 때문.
+- **path identity**: `sales.item === sales.item`, `rows.amount === rows.amount`,
+  `$deep(name)`도 캐시. 안 그러면 `sales.item[i]` 루프가 매번 새 collection을 만들어 memo 무용.
+- 정렬은 키를 한 번만 읽음 (비교마다 `readRaw` 하던 것 제거).
+- Column `get()`은 복사본 반환 (공유 캐시 오염 방지).
+
+같이 고친 버그: typed leaf(`price: 'number'`)가 child element로 저장돼 있으면 `rows.price`가
+Column이 아니라 Collection을 반환했다(타입은 Column). 이제 schema가 kind를 결정, loose만 DOM 판정.
+
+의미론 변화(의도됨): 뷰는 **DOM에만 의존**한다. predicate/comparator가 외부 상태를 읽으면
+그 상태 변화는 추적 안 됨 → 새 뷰를 만들 것 (README 문서화). 이전에도 subscribe는 같은
+의미였고, pull read만 우연히 매번 재계산했을 뿐.
+
+비용: gzip 2.37 → 2.95kB. 캐시된 collection이 마지막 결과 배열(제거된 element 포함 가능)을
+다음 읽기까지 붙잡는다. 읽은 모든 root가 observe 대상이 되어 mutation마다 O(depth) 조상 순회.
+
 ## 알려진 약점 (정직하게)
 
 - bulk write read/write 비대칭 → typed에선 iteration 강제.
@@ -304,7 +339,9 @@ npm publish는 실제 소비처가 생기면 — "이게 없으면 매일 불편
 - descriptor의 child는 1-tuple만 — heterogeneous children 미지원.
 - 필드 이름 `get`/`subscribe`는 schema에서 금지, loose 모드에선 collection 레벨 열로 접근 불가
   (atom 프로토콜과 맞바꾼 비용).
-- 읽기 경로 메모이제이션 없음: `$where().$sort()` 체인에 인덱스 접근마다 전체 재계산 (n² 패턴).
+- 구독자끼리 계산 공유 없음: 같은 `$where`를 20곳에서 구독하면 20번 계산 (뷰가 독립 객체).
+- typed collection의 index signature가 `readonly`라 README의 `delete sales.item[0]`이 tsc에서
+  막힘 (런타임은 동작). readonly를 풀면 `c[0] = x`가 타입 통과 후 런타임 throw — 결정 필요.
 - JSX spike의 `h`는 전역 `document` 의존(SSR 불가) + 전역 `JSX` 네임스페이스 선언
   (React와 충돌 가능). spike 한정.
 

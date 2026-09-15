@@ -1,6 +1,6 @@
 import { wrapNode } from './wrap';
 import { createColumn } from './column';
-import { derived, sameElements } from './reactive';
+import { derived, memo, sameElements } from './reactive';
 import { matches } from './match';
 import {
   childrenNamed,
@@ -34,28 +34,51 @@ function isIndex(key: string): number | null {
 }
 
 export function createCollection(config: CollectionConfig): LooseCollection {
-  const { root, owner, tagName, descriptor, compute } = config;
+  const { root, owner, tagName, descriptor } = config;
+  const compute = memo(root, config.compute);
 
   function leafType(name: string): LeafDescriptor {
     const field = descriptor?.[name];
     return isLeaf(field) ? field : 'string';
   }
 
-  function fieldAccess(name: string): unknown {
+  // A schema fixes whether a field is a column or a child collection. Loose mode decides from
+  // the current members, so that decision is re-checked (and memoized) per DOM version.
+  const fieldKinds = new Map<string, () => boolean>();
+  const fieldViews = new Map<string, { hasChildren: boolean; view: unknown }>();
+
+  function fieldHasChildren(name: string): boolean {
     const field = descriptor?.[name];
-    const childDesc = childDescriptor(field);
-    const hasChildren =
-      childDesc !== null || compute().some((element) => childrenNamed(element, name).length > 0);
-    if (hasChildren) {
-      return createCollection({
-        root,
-        owner: null,
-        tagName: name,
-        descriptor: childDesc,
-        compute: () => compute().flatMap((element) => childrenNamed(element, name)),
-      });
+    if (field !== undefined) {
+      return childDescriptor(field) !== null;
     }
-    return createColumn({ root, field: name, type: leafType(name), compute });
+    let kind = fieldKinds.get(name);
+    if (!kind) {
+      kind = memo(root, () =>
+        compute().some((element) => childrenNamed(element, name).length > 0),
+      );
+      fieldKinds.set(name, kind);
+    }
+    return kind();
+  }
+
+  function fieldAccess(name: string): unknown {
+    const hasChildren = fieldHasChildren(name);
+    const cached = fieldViews.get(name);
+    if (cached && cached.hasChildren === hasChildren) {
+      return cached.view;
+    }
+    const view = hasChildren
+      ? createCollection({
+          root,
+          owner: null,
+          tagName: name,
+          descriptor: childDescriptor(descriptor?.[name]),
+          compute: () => compute().flatMap((element) => childrenNamed(element, name)),
+        })
+      : createColumn({ root, field: name, type: leafType(name), compute });
+    fieldViews.set(name, { hasChildren, view });
+    return view;
   }
 
   const api = {
@@ -74,24 +97,22 @@ export function createCollection(config: CollectionConfig): LooseCollection {
       field: string | ((a: LooseWrapped, b: LooseWrapped) => number),
       direction: SortDirection = 'asc',
     ): LooseCollection {
-      const compare =
+      const sorted =
         typeof field === 'function'
-          ? (a: Element, b: Element): number =>
-              field(wrapNode(a, descriptor), wrapNode(b, descriptor))
-          : (a: Element, b: Element): number => {
+          ? (): Element[] =>
+              [...compute()].sort((a, b) => field(wrapNode(a, descriptor), wrapNode(b, descriptor)))
+          : (): Element[] => {
+              // Read each key once instead of on every comparison.
               const type = leafType(field);
-              const va = fromDom(readRaw(a, field), type);
-              const vb = fromDom(readRaw(b, field), type);
-              const base = va < vb ? -1 : va > vb ? 1 : 0;
-              return direction === 'desc' ? -base : base;
+              const sign = direction === 'desc' ? -1 : 1;
+              const keyed = compute().map((element) => ({
+                element,
+                key: fromDom(readRaw(element, field), type),
+              }));
+              keyed.sort((a, b) => (a.key < b.key ? -sign : a.key > b.key ? sign : 0));
+              return keyed.map((entry) => entry.element);
             };
-      return createCollection({
-        root,
-        owner,
-        tagName,
-        descriptor,
-        compute: () => [...compute()].sort(compare),
-      });
+      return createCollection({ root, owner, tagName, descriptor, compute: sorted });
     },
     $deep(name: string): LooseCollection {
       return createCollection({

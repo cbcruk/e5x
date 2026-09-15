@@ -1,4 +1,4 @@
-import { derived } from './reactive';
+import { derived, memo } from './reactive';
 import { fromDom, readRaw } from './coerce';
 import type { Column, LeafDescriptor, ReadableAtom } from './types';
 
@@ -30,17 +30,21 @@ function extreme(values: Leaf[], direction: 1 | -1): Leaf {
 
 export function createColumn(config: ColumnConfig): Column<Leaf> {
   const { root, field, type, compute } = config;
-  const values = (): Leaf[] => compute().map((element) => fromDom(readRaw(element, field), type));
+  const values = memo(root, (): Leaf[] =>
+    compute().map((element) => fromDom(readRaw(element, field), type)),
+  );
+  // The memoized array is shared by every aggregate; hand callers their own copy.
+  const snapshot = (): Leaf[] => values().slice();
 
   const api = {
     get(): Leaf[] {
-      return values();
+      return snapshot();
     },
     subscribe(listener: (values: Leaf[]) => void): () => void {
-      return derived(root, values, shallowEqual).subscribe(listener);
+      return derived(root, snapshot, shallowEqual).subscribe(listener);
     },
     get $values(): ReadableAtom<Leaf[]> {
-      return derived(root, values, shallowEqual);
+      return derived(root, snapshot, shallowEqual);
     },
     get $length(): ReadableAtom<number> {
       return derived(root, () => values().length);
