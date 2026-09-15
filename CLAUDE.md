@@ -583,6 +583,17 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   - 리뷰어가 문서 주장을 실행으로 검증하다 찾은 부정확함: 필드 쓰기는 schema와 무관하게 **같은 이름의 기존 child를
     먼저** 쓴다(`writeField`), static deps 경고는 뷰당 1회가 아니라 **바깥 필드당** 1회. README 문구도 함께 고침.
 
+## 타입 있는 `$deep` (2026-09, #10)
+
+- `$deep(name)` loose 유지. `$deep(name, schema)` → `Collection<D>`(coercion, `$where`/`$sort`/열, `$push`는 부모가 없어
+  `Error`). `$deep(name, 'string' | 'number' | 'boolean')` → descendant **자신의 text** column(`<price>3</price>`용).
+  element·collection·loose 네 인터페이스에 같은 overload 3개.
+- 구현: `deepAxis(root, members, inputs)`(collection.ts)가 element(`() => [element]`)와 collection(`compute`) 양쪽의
+  `$deep`을 만든다. 캐시는 loose·leaf는 문자열 키 `weakCache`, schema는 `WeakMap<schema, weakCache>`(schema 객체 identity).
+  schema는 `assertValidDescriptor`로 검증, leaf는 세 타입 외 `TypeError`(`'<number>'` 포함 — child text 표시는 의미 없음).
+- Column 설정의 `field`를 `read(element)` 함수로 바꿔 필드 읽기와 자기 text 읽기를 같은 경로로.
+- 이슈는 "Conditional on #12"(dogfooding 후 결정) 마일스톤이었으나 사용자가 먼저 진행하기로 함.
+
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (2026-09 채택)
 
 ```
@@ -648,7 +659,7 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 ## 알려진 약점 (정직하게)
 
 - bulk write read/write 비대칭 → typed에선 iteration 강제.
-- `$deep()` 결과는 항상 loose (descendant는 schema에 없음). 의도된 한계.
+- `$deep(name)`은 loose. 타입이 필요하면 호출할 때 schema나 leaf 타입을 준다(#10) — descendant는 부모 schema에 없다.
 - descriptor의 child는 1-tuple만 — heterogeneous children 미지원.
 - 필드 이름 `get`/`subscribe`는 schema에서 금지, loose 모드에선 collection 레벨 열로 접근 불가
   (atom 프로토콜과 맞바꾼 비용).

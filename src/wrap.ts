@@ -1,5 +1,4 @@
-import { createCollection } from './collection'
-import { weakCache } from './cache'
+import { createCollection, deepAxis } from './collection'
 import { derived, watch } from './reactive'
 import { DEV, noteRead, registerSource } from './dev'
 import {
@@ -56,16 +55,6 @@ function childCollection(
   })
 }
 
-function descendants(element: Element, name: string): LooseCollection {
-  return createCollection({
-    root: element,
-    owner: null,
-    tagName: name,
-    descriptor: null,
-    compute: () => Array.from(element.querySelectorAll(name)),
-  })
-}
-
 /**
  * Returns the stable proxy for an element wrapped with a schema, creating it on first use.
  *
@@ -86,7 +75,7 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
 
   // Stable per element + name, so repeated path reads reuse one memoized collection.
   const children = new Map<string, LooseCollection>()
-  const deep = weakCache<LooseCollection>()
+  const deep = deepAxis(element, () => [element])
   const childrenOf = (name: string, child: NodeDescriptor | null): LooseCollection => {
     let collection = children.get(name)
     if (!collection) {
@@ -149,7 +138,7 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
         return subscribe
       }
       if (key === '$deep') {
-        return (name: string): LooseCollection => deep.get(name, () => descendants(target, name))
+        return deep
       }
       if (typeof key === 'symbol') {
         return Reflect.get(target, key)

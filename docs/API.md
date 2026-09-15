@@ -329,19 +329,34 @@ const stop = sales.$.vendor.subscribe((vendor) => {
 stop()
 ```
 
-### `element.$deep(name)`
+### `element.$deep(name, shape?)`
 
-The live collection of descendants that match a tag name or any `querySelectorAll` selector: E4X's
-`..` axis. The result is always loose, because schemas describe direct children only.
+The live descendants that match a tag name or any `querySelectorAll` selector: E4X's `..` axis.
+Schemas describe direct children only, so the shape of what `$deep` finds is its second argument.
 
-**Type:** `$deep(name: string): LooseCollection`
+- **No shape:** a loose collection, for exploring.
+- **A schema:** a typed, coerced `Collection`. Fields read as they do for direct children: a
+  same-name child first, then the attribute. The members have no single parent, so the collection
+  cannot `$push`. Views are shared per name and schema object.
+- **A leaf type** (`'string'`, `'number'`, `'boolean'`): a column of each descendant's own text,
+  for text-only elements such as `<price>3</price>`. Any other string throws a `TypeError`.
+
+**Type:** `$deep(name: string): LooseCollection`,
+`$deep<const D extends NodeDescriptor>(name: string, schema: ValidDescriptor<D>): Collection<D>`, and
+`$deep<const L extends LeafType>(name: string, type: L): Column<string> | NumericColumn<number | boolean>`
+(by `L`)
 
 ```ts
 import { wrap } from 'e5x'
 
-const sales = wrap(document.querySelector('sales')!)
-const notes = sales.$deep('note').$length.get()
-const cheap = sales.$deep('item[price="1"]')
+const catalog = wrap(document.querySelector('catalog')!)
+const notes = catalog.$deep('note').$length.get()
+
+const items = catalog.$deep('item', { type: 'string', price: 'number' } as const)
+const cheapest: number | undefined = items.price.$min.get()
+
+const prices = catalog.$deep('price', 'number')
+const total: number = prices.$sum.get()
 ```
 
 ## Collections
@@ -512,18 +527,23 @@ const byPrice = (a: { price: number }, b: { price: number }) =>
 const sorted = sales.item.$sort(byPrice, [filters.$.direction])
 ```
 
-### `collection.$deep(name)`
+### `collection.$deep(name, shape?)`
 
-The live collection of descendants of every member that match a selector. The result is always
-loose.
+The live descendants of every member that match a selector. The shape argument works as for
+[`element.$deep`](#elementdeepname-shape): none for a loose collection, a schema for a typed
+collection, or a leaf type for a column of their text.
 
-**Type:** `$deep(name: string): LooseCollection`
+**Type:** the same three overloads as `element.$deep`
 
 ```ts
 import { wrap } from 'e5x'
 
 const sales = wrap(document.querySelector('sales')!, { item: [{ dept: 'string' }] } as const)
-const dairyNotes = sales.item.$where({ dept: 'dairy' }).$deep('note')
+const dairy = sales.item.$where({ dept: 'dairy' })
+
+const dairyNotes = dairy.$deep('note')
+const lots = dairy.$deep('lot', { code: 'string', expires: 'string' } as const)
+const weights = dairy.$deep('weight', 'number')
 ```
 
 ### `collection.$push(data)`

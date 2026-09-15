@@ -10,9 +10,10 @@ import {
   type Inputs,
 } from './reactive'
 import { DEV, createStaleCheck, createTracker, registerSource, tracked } from './dev'
-import { byIdentity, weakCache, type IdentityCache } from './cache'
+import { byIdentity, weakCache, type IdentityCache, type ViewCache } from './cache'
 import { matches } from './match'
 import {
+  assertValidDescriptor,
   childrenNamed,
   childDescriptor,
   isLeaf,
@@ -24,6 +25,7 @@ import {
 import type {
   Deps,
   LeafDescriptor,
+  LeafType,
   LooseCollection,
   LooseWrapped,
   NodeDescriptor,
@@ -64,6 +66,60 @@ function predicateKey(predicate: ObjectPredicate): string | null {
 function isIndex(key: string): number | null {
   const index = Number(key)
   return Number.isInteger(index) && index >= 0 ? index : null
+}
+
+const LEAF_TYPES = new Set(['string', 'number', 'boolean'])
+
+/**
+ * Creates the `$deep` axis of an element or a collection: the descendants of its members that match a selector.
+ *
+ * With no shape the result is a loose collection. A schema gives a typed collection of the
+ * descendants, and a leaf type gives a column of their own text. Views are cached per name and
+ * shape, schemas by identity, and hold only weakly, like the other derived views.
+ *
+ * @param members The elements whose descendants are searched: the element itself, or a collection's members.
+ * @throws {TypeError} From the returned function, when a schema uses a reserved name or a leaf type is not `'string'`, `'number'`, or `'boolean'`.
+ */
+export function deepAxis(
+  root: Node,
+  members: () => Element[],
+  inputs: Inputs = NO_INPUTS,
+): (name: string, shape?: NodeDescriptor | LeafType) => unknown {
+  const loose = weakCache<LooseCollection>()
+  const columns = weakCache<object>()
+  const bySchema = new WeakMap<NodeDescriptor, ViewCache<LooseCollection>>()
+  return (name, shape) => {
+    const found = (): Element[] =>
+      members().flatMap((element) => Array.from(element.querySelectorAll(name)))
+    const collection = (descriptor: NodeDescriptor | null) => (): LooseCollection =>
+      createCollection({ root, owner: null, tagName: name, descriptor, compute: found, inputs })
+    if (shape === undefined) {
+      return loose.get(name, collection(null))
+    }
+    if (typeof shape === 'string') {
+      if (!LEAF_TYPES.has(shape)) {
+        throw new TypeError(
+          `e5x: $deep() takes a schema or 'string' | 'number' | 'boolean', not "${shape}"`,
+        )
+      }
+      return columns.get(JSON.stringify([name, shape]), () =>
+        createColumn({
+          root,
+          read: (element) => element.textContent,
+          type: shape,
+          compute: found,
+          inputs,
+        }),
+      )
+    }
+    assertValidDescriptor(shape)
+    let cache = bySchema.get(shape)
+    if (!cache) {
+      cache = weakCache()
+      bySchema.set(shape, cache)
+    }
+    return cache.get(name, collection(shape))
+  }
 }
 
 /**
@@ -147,7 +203,13 @@ export function createCollection(config: CollectionConfig): LooseCollection {
           compute: () => compute().flatMap((element) => childrenNamed(element, name)),
           inputs,
         })
-      : createColumn({ root, field: name, type: leafType(name), compute, inputs })
+      : createColumn({
+          root,
+          read: (element) => readRaw(element, name),
+          type: leafType(name),
+          compute,
+          inputs,
+        })
     fieldViews.set(name, { hasChildren, view })
     return view
   }
@@ -158,7 +220,7 @@ export function createCollection(config: CollectionConfig): LooseCollection {
   const whereByObject = weakCache<LooseCollection>()
   const sortByComparator: IdentityCache<Comparator, LooseCollection> = new WeakMap()
   const sortByField = weakCache<LooseCollection>()
-  const deepByName = weakCache<LooseCollection>()
+  const deep = deepAxis(root, compute, inputs)
   let lengthAtom: ReadableAtom<number> | null = null
 
   const withDeps = (own: Deps): Inputs =>
@@ -233,17 +295,8 @@ export function createCollection(config: CollectionConfig): LooseCollection {
         }),
       )
     },
-    $deep(name: string): LooseCollection {
-      return deepByName.get(name, () =>
-        createCollection({
-          root,
-          owner: null,
-          tagName: name,
-          descriptor: null,
-          compute: () => compute().flatMap((element) => Array.from(element.querySelectorAll(name))),
-          inputs,
-        }),
-      )
+    $deep(name: string, shape?: NodeDescriptor | LeafType): unknown {
+      return deep(name, shape)
     },
     $push(data: Record<string, unknown>): LooseWrapped {
       if (!owner || !tagName) {

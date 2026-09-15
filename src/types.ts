@@ -157,13 +157,46 @@ export interface WrappedBase {
   /** Reads and writes attributes directly, even where a child element has the same name. */
   readonly $attr: Record<string, string | null>
   /**
-   * Returns the live collection of descendants matching a selector — E4X's `..` axis.
+   * Returns the live, loose collection of descendants that match a selector — E4X's `..` axis.
    *
-   * The result is always loose: schemas describe direct children only.
+   * Pass a schema or a leaf type for typed descendants.
    *
    * @param name A tag name or any `querySelectorAll` selector.
    */
   $deep(name: string): LooseCollection
+  /**
+   * Returns the live collection of descendants that match a selector, typed and coerced by `schema`.
+   *
+   * The members are not children of one parent, so the collection cannot `$push`. Views are
+   * shared per name and schema object: define the schema once.
+   *
+   * @template D The descendants' schema, inferred as a literal type.
+   * @param name A tag name or any `querySelectorAll` selector.
+   * @param schema The descendants' schema. A reserved field name is a type error, and a `TypeError` at runtime.
+   *
+   * @example Typed descendants
+   * ```ts
+   * import { wrap } from 'e5x'
+   *
+   * const doc = wrap(document.querySelector('catalog')!)
+   * const items = doc.$deep('item', { type: 'string', price: 'number' } as const)
+   * const total: number = items.price.$sum.get()
+   * ```
+   */
+  $deep<const D extends NodeDescriptor>(
+    name: string,
+    schema: D extends ValidDescriptor<D> ? D : ValidDescriptor<D>,
+  ): Collection<D>
+  /**
+   * Returns the live column of the text of descendants that match a selector, coerced to `type`.
+   *
+   * For text-only descendants such as `<price>3</price>`: `'number'` and `'boolean'` give a
+   * {@linkcode NumericColumn}, `'string'` a {@linkcode Column}.
+   *
+   * @param name A tag name or any `querySelectorAll` selector.
+   * @throws {TypeError} When `type` is not `'string'`, `'number'`, or `'boolean'`.
+   */
+  $deep<const L extends LeafType>(name: string, type: L): ColumnFor<L>
 }
 
 /**
@@ -339,13 +372,46 @@ interface CollectionBase<N> {
    */
   $sort(comparator: (a: Wrapped<N>, b: Wrapped<N>) => number, deps?: Deps): Collection<N>
   /**
-   * Returns the live collection of descendants of every member that match a selector.
+   * Returns the live, loose collection of every member's descendants that match a selector — E4X's `..` axis.
    *
-   * The result is always loose: schemas describe direct children only.
+   * Pass a schema or a leaf type for typed descendants.
    *
    * @param name A tag name or any `querySelectorAll` selector.
    */
   $deep(name: string): LooseCollection
+  /**
+   * Returns the live collection of every member's descendants that match a selector, typed and coerced by `schema`.
+   *
+   * The members are not children of one parent, so the collection cannot `$push`. Views are
+   * shared per name and schema object: define the schema once.
+   *
+   * @template D The descendants' schema, inferred as a literal type.
+   * @param name A tag name or any `querySelectorAll` selector.
+   * @param schema The descendants' schema. A reserved field name is a type error, and a `TypeError` at runtime.
+   *
+   * @example Typed descendants
+   * ```ts
+   * import { wrap } from 'e5x'
+   *
+   * const doc = wrap(document.querySelector('catalog')!)
+   * const items = doc.$deep('item', { type: 'string', price: 'number' } as const)
+   * const total: number = items.price.$sum.get()
+   * ```
+   */
+  $deep<const D extends NodeDescriptor>(
+    name: string,
+    schema: D extends ValidDescriptor<D> ? D : ValidDescriptor<D>,
+  ): Collection<D>
+  /**
+   * Returns the live column of the text of every member's descendants that match a selector, coerced to `type`.
+   *
+   * For text-only descendants such as `<price>3</price>`: `'number'` and `'boolean'` give a
+   * {@linkcode NumericColumn}, `'string'` a {@linkcode Column}.
+   *
+   * @param name A tag name or any `querySelectorAll` selector.
+   * @throws {TypeError} When `type` is not `'string'`, `'number'`, or `'boolean'`.
+   */
+  $deep<const L extends LeafType>(name: string, type: L): ColumnFor<L>
   /**
    * Appends a new member built from `data` and returns it wrapped.
    *
@@ -408,11 +474,46 @@ export interface LooseWrapped {
   /** Mirrors the element's fields as atoms; names that currently have child elements appear as collections. */
   readonly $: Record<string, ReadableAtom<any>>
   /**
-   * Returns the live collection of descendants matching a selector — E4X's `..` axis.
+   * Returns the live, loose collection of descendants that match a selector — E4X's `..` axis.
+   *
+   * Pass a schema or a leaf type for typed descendants.
    *
    * @param name A tag name or any `querySelectorAll` selector.
    */
   $deep(name: string): LooseCollection
+  /**
+   * Returns the live collection of descendants that match a selector, typed and coerced by `schema`.
+   *
+   * The members are not children of one parent, so the collection cannot `$push`. Views are
+   * shared per name and schema object: define the schema once.
+   *
+   * @template D The descendants' schema, inferred as a literal type.
+   * @param name A tag name or any `querySelectorAll` selector.
+   * @param schema The descendants' schema. A reserved field name is a type error, and a `TypeError` at runtime.
+   *
+   * @example Typed descendants
+   * ```ts
+   * import { wrap } from 'e5x'
+   *
+   * const doc = wrap(document.querySelector('catalog')!)
+   * const items = doc.$deep('item', { type: 'string', price: 'number' } as const)
+   * const total: number = items.price.$sum.get()
+   * ```
+   */
+  $deep<const D extends NodeDescriptor>(
+    name: string,
+    schema: D extends ValidDescriptor<D> ? D : ValidDescriptor<D>,
+  ): Collection<D>
+  /**
+   * Returns the live column of the text of descendants that match a selector, coerced to `type`.
+   *
+   * For text-only descendants such as `<price>3</price>`: `'number'` and `'boolean'` give a
+   * {@linkcode NumericColumn}, `'string'` a {@linkcode Column}.
+   *
+   * @param name A tag name or any `querySelectorAll` selector.
+   * @throws {TypeError} When `type` is not `'string'`, `'number'`, or `'boolean'`.
+   */
+  $deep<const L extends LeafType>(name: string, type: L): ColumnFor<L>
   /** Returns the wrapped element itself. */
   get(): LooseWrapped
   /**
@@ -451,11 +552,46 @@ export interface LooseCollection {
    */
   $sort(comparator: (a: LooseWrapped, b: LooseWrapped) => number, deps?: Deps): LooseCollection
   /**
-   * Returns the live collection of descendants of every member that match a selector.
+   * Returns the live, loose collection of every member's descendants that match a selector — E4X's `..` axis.
+   *
+   * Pass a schema or a leaf type for typed descendants.
    *
    * @param name A tag name or any `querySelectorAll` selector.
    */
   $deep(name: string): LooseCollection
+  /**
+   * Returns the live collection of every member's descendants that match a selector, typed and coerced by `schema`.
+   *
+   * The members are not children of one parent, so the collection cannot `$push`. Views are
+   * shared per name and schema object: define the schema once.
+   *
+   * @template D The descendants' schema, inferred as a literal type.
+   * @param name A tag name or any `querySelectorAll` selector.
+   * @param schema The descendants' schema. A reserved field name is a type error, and a `TypeError` at runtime.
+   *
+   * @example Typed descendants
+   * ```ts
+   * import { wrap } from 'e5x'
+   *
+   * const doc = wrap(document.querySelector('catalog')!)
+   * const items = doc.$deep('item', { type: 'string', price: 'number' } as const)
+   * const total: number = items.price.$sum.get()
+   * ```
+   */
+  $deep<const D extends NodeDescriptor>(
+    name: string,
+    schema: D extends ValidDescriptor<D> ? D : ValidDescriptor<D>,
+  ): Collection<D>
+  /**
+   * Returns the live column of the text of every member's descendants that match a selector, coerced to `type`.
+   *
+   * For text-only descendants such as `<price>3</price>`: `'number'` and `'boolean'` give a
+   * {@linkcode NumericColumn}, `'string'` a {@linkcode Column}.
+   *
+   * @param name A tag name or any `querySelectorAll` selector.
+   * @throws {TypeError} When `type` is not `'string'`, `'number'`, or `'boolean'`.
+   */
+  $deep<const L extends LeafType>(name: string, type: L): ColumnFor<L>
   /**
    * Appends a new member with `data` written as attributes and returns it wrapped.
    *
