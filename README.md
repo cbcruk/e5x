@@ -134,7 +134,9 @@ changes that land in the same tick.
   observing a node does not keep it alive.
 - A collection keeps its last result until it recomputes. A subscribed collection recomputes
   as soon as the mutation arrives. One that nobody subscribes to keeps elements removed from
-  the DOM reachable until its next read.
+  the DOM reachable until its next read. The same goes for its deps: a view remembers the last
+  value of each dep, so a collection passed as a dep keeps its removed elements reachable
+  until the view itself is read again.
 
 Verified with garbage-collection tests in Chromium (`test/lifecycle.test.ts`). happy-dom's
 `MutationObserver` keeps observed nodes alive until `disconnect()`, so under happy-dom, detached

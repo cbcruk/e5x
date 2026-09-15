@@ -8,8 +8,9 @@ import { weakCache } from '../src/cache'
 //
 // Each scenario builds its objects inside a separate function and returns only `WeakRef`s,
 // so nothing in the test's own scope keeps them alive. Scenarios that expect an object to stay
-// alive are the controls: they show that the harness can see retention at all. The wrapped
-// roots stay in the document, so their proxies and cached collections outlive each scenario.
+// alive are the controls: they show that the harness can see retention at all. A scenario's
+// wrapped roots stay in the document, with their proxies and cached collections, until the
+// next scenario replaces the markup.
 
 declare const gc: () => void
 
@@ -82,13 +83,16 @@ function subscribeElement(): WeakRef<object> {
 
 function readUnheldViews(): WeakRef<object>[] {
   const { sales } = ledger()
-  const where = sales.item.$where({ type: 'a' })
-  const sort = sales.item.$sort('price', 'desc')
-  const deep = sales.$deep('item')
-  where.$length.get()
-  sort.price.get()
-  deep.$length.get()
-  return [where, sort, deep].map((view) => new WeakRef(view))
+  const byPrice = (a: { price: number }, b: { price: number }): number => a.price - b.price
+  const views = [
+    sales.item.$where({ type: 'a' }),
+    sales.item.$sort('price', 'desc'),
+    sales.item.$sort(byPrice),
+    sales.$deep('item'),
+    sales.item.$deep('note'),
+  ]
+  for (const view of views) view.$length.get()
+  return views.map((view) => new WeakRef(view))
 }
 
 function removeAfterRead(then: 'nothing' | 'read' | 'subscribed'): WeakRef<object> {
@@ -99,6 +103,18 @@ function removeAfterRead(then: 'nothing' | 'read' | 'subscribed'): WeakRef<objec
   element.remove()
   if (then === 'read') sales.item.$length.get()
   return new WeakRef(element)
+}
+
+function removeFromDep(): { element: WeakRef<object>; view: { $length: { get(): number } } } {
+  const { sales } = ledger()
+  document.body.insertAdjacentHTML('beforeend', '<tags><tag></tag><tag></tag></tags>')
+  const tags = wrap(document.querySelector('tags')!)
+  const view = sales.item.$where(() => tags.tag.$length.get() > 0, [tags.tag])
+  view.$length.get()
+  const element = tags.tag[0]!.$el
+  element.remove()
+  tags.tag.$length.get()
+  return { element: new WeakRef(element), view }
 }
 
 function observeDetachedTree(): WeakRef<object> {
@@ -164,6 +180,15 @@ describe('removed elements', () => {
 
   it('are released by a subscribed collection once the mutation is delivered', async () => {
     expect(await collected(removeAfterRead('subscribed'))).toBe(true)
+  })
+
+  // A view compares each dep's last value on read; for a collection dep that value holds
+  // wrapped elements, so rereading the dep alone does not release them.
+  it('stay reachable from a held view that has a collection as a dep until the view is read', async () => {
+    const { element, view } = removeFromDep()
+    expect(await collected(element)).toBe(false)
+    view.$length.get()
+    expect(await collected(element)).toBe(true)
   })
 })
 

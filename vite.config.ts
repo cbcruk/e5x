@@ -26,7 +26,8 @@ export default defineConfig({
           exclude: [...configDefaults.exclude, 'test/lifecycle.test.ts'],
         },
       },
-      // The suites that exercise MutationObserver delivery, rerun in headless Chromium.
+      // Headless Chromium: the suites that exercise MutationObserver delivery (also run in
+      // happy-dom) and the garbage collection tests (Chromium only).
       // Listed by hand: add any new suite that depends on observer behaviour.
       {
         extends: true,
