@@ -20,6 +20,8 @@ function notify(): void {
   for (const node of nodes) {
     const listeners = listenersByNode.get(node)
     if (listeners) {
+      // Snapshot on purpose: a listener may unsubscribe (or subscribe) while we iterate.
+      // oxlint-disable-next-line unicorn/no-useless-spread
       for (const listener of [...listeners]) {
         listener()
       }

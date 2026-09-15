@@ -22,6 +22,7 @@ jobs:
         with:
           node-version: '24'
           cache: true
+      - run: vp check
       - run: vp run typecheck
       - run: vp run test
       - run: vp run build:demo
