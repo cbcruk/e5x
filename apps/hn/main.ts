@@ -1,4 +1,4 @@
-import { computed } from '../../src/index'
+import { computed, wrap } from '../../src/index'
 import type { ReadableAtom } from '../../src/index'
 import { createFilters, list, loadSeen, saveSeen } from './filters'
 import { stories } from './story'
@@ -31,12 +31,15 @@ export interface Options {
   storage?: Pick<Storage, 'getItem' | 'setItem'>
 }
 
+// Writes only when the result would differ. Applying is triggered by changes to the page, so a
+// write that changes nothing still has to leave the DOM untouched, or it would trigger itself.
 function highlightTitles(story: Story, words: string[]): void {
   const link = story.row.$el.querySelector('span.titleline > a')
   if (!link) return
   const title = link.textContent ?? ''
+  const marked = Array.from(link.querySelectorAll('mark'), (mark) => mark.textContent)
   if (words.length === 0) {
-    if (link.querySelector('mark')) link.textContent = title
+    if (marked.length > 0) link.textContent = title
     return
   }
   // Rebuilt as text nodes and <mark>: never with innerHTML, since titles are other people's text.
@@ -46,9 +49,11 @@ function highlightTitles(story: Story, words: string[]): void {
   )
   const parts = title.split(pattern)
   if (parts.length === 1) {
-    if (link.querySelector('mark')) link.textContent = title
+    if (marked.length > 0) link.textContent = title
     return
   }
+  const wanted = parts.filter((_, index) => index % 2 === 1)
+  if (marked.length === wanted.length && marked.every((text, i) => text === wanted[i])) return
   link.replaceChildren(
     ...parts.map((part, index) => {
       if (index % 2 === 0) return link.ownerDocument.createTextNode(part)
@@ -96,7 +101,8 @@ export function mount(page: Element, options: Options = {}): { stop(): void } {
     const muted = list(filters.muted)
     const words = list(filters.highlight)
     for (const story of current) {
-      story.seen = seen.has(story.id)
+      const isSeen = seen.has(story.id)
+      if (story.seen !== isSeen) story.seen = isSeen
       // A job post has no score and no comments, so a threshold says nothing about it. Without
       // this, any saved threshold would blank /jobs, a page we do not own.
       const belowThreshold =
@@ -106,7 +112,7 @@ export function mount(page: Element, options: Options = {}): { stop(): void } {
         belowThreshold ||
         (filters['hide-seen'] && story.seen) ||
         muted.some((domain) => story.site.toLowerCase().endsWith(domain))
-      story.hidden = hide
+      if (story.hidden !== hide) story.hidden = hide
       highlightTitles(story, words)
     }
     const hidden = current.filter((story) => story.hidden).length
@@ -127,6 +133,11 @@ export function mount(page: Element, options: Options = {}): { stop(): void } {
     (...values) => values,
   )
   stops.push(inputs.subscribe(apply))
+  // Half of a story lives in a sibling row, which the story collection does not watch: its atom
+  // only emits when the set of story rows changes. The page element atom emits on any change in
+  // the subtree, so a score arriving or changing later is applied too. Safe against a loop
+  // because `apply` writes only what would differ.
+  stops.push(wrap(page).subscribe(apply))
 
   const markSeen = (story: Story): void => {
     seen.add(story.id)

@@ -184,6 +184,65 @@ describe('the filter bar', () => {
     expect(shown()).toEqual([])
   })
 
+  it('reads a story whose second row arrives a tick later', async () => {
+    mount(page(), { storage })
+    await flush()
+    type('min-score', '100')
+    await flush()
+
+    // Two separate mutations: the title row first, its subtext a tick later. A story frozen at
+    // first read would have no score for the rest of the page's life, and so escape the filter.
+    const table = document.querySelector('tr.athing.submission')!.parentElement!
+    table.insertAdjacentHTML(
+      'beforeend',
+      `<tr class="athing submission" id="108"><td class="title"><span class="titleline"><a href="https://late.example/g">Two-step arrival</a><span class="sitebit comhead"> (<a href="from?site=late.example"><span class="sitestr">late.example</span></a>)</span></span></td></tr>`,
+    )
+    await flush()
+    table.insertAdjacentHTML(
+      'beforeend',
+      `<tr><td class="subtext"><span class="subline"><span class="score" id="score_108">5 points</span> by <a href="user?id=gg" class="hnuser">gg</a> <span class="age" title="2026-09-16T01:00:00"><a href="item?id=108">1 minute ago</a></span> | <a href="item?id=108">1&nbsp;comment</a></span></td></tr>`,
+    )
+    await flush()
+
+    expect(shown()).not.toContain('Two-step arrival')
+    // Both of its rows are hidden, not just the title row.
+    expect(document.querySelector('[id="108"]')!.getAttribute('data-e5x-hidden')).toBe('true')
+    expect(
+      document.querySelector('[id="108"]')!.nextElementSibling!.getAttribute('data-e5x-hidden'),
+    ).toBe('true')
+  })
+
+  it('notices a score edited in place', async () => {
+    mount(page(), { storage })
+    await flush()
+    type('min-score', '100')
+    await flush()
+    expect(shown()).toContain('A well-liked post')
+
+    document.querySelector('[id="score_101"]')!.textContent = '3 points'
+    await flush()
+
+    expect(shown()).not.toContain('A well-liked post')
+  })
+
+  it('settles instead of re-applying forever', async () => {
+    mount(page(), { storage })
+    await flush()
+    type('min-score', '100')
+    type('highlight', 'post')
+    await flush()
+
+    // Applying is triggered by page changes, so a settled page must produce no more writes.
+    let writes = 0
+    const observer = new MutationObserver((records) => (writes += records.length))
+    observer.observe(page(), { childList: true, subtree: true, attributes: true })
+    await flush()
+    await flush()
+    observer.disconnect()
+
+    expect(writes).toBe(0)
+  })
+
   it('does not hide stories the page gives no score, such as job posts', async () => {
     mount(page(), { storage })
     await flush()

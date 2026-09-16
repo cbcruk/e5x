@@ -13,7 +13,8 @@ pnpm hn:build      # apps/hn/dist/e5x-hn.user.js
 Install that file in Tampermonkey or Violentmonkey. It runs on `news.ycombinator.com`, adds a bar
 above the page, and keeps its settings and the stories you have seen in `localStorage`.
 
-- **min score / min comments**: hide anything below.
+- **min score / min comments**: hide anything below. Posts the page gives no score, such as job
+  posts, are never hidden by a threshold — otherwise a saved filter would blank `/jobs`.
 - **mute**: hide stories from these domains (comma or space separated).
 - **highlight**: wrap these words in the titles.
 - **hide seen**: hide stories you already opened, plus anything from _mark page seen_.

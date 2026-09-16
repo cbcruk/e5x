@@ -18,12 +18,26 @@ descendants. Nothing addresses "the element after this one", so `story.ts` leave
 This is the single biggest gap for page markup. Tables, definition lists, and heading-plus-content
 sections all put related data in siblings.
 
-### 2. Children match by tag name, and HTML tells elements apart by class — workaround (general, new)
+### 1b. Nothing watches a sibling either — workaround (general, new)
+
+The reactive half of entry 1, and the sharper finding. Every atom this app holds is rooted at the
+page or at a story row, and the story collection's atom only emits when the **set** of story rows
+changes. A story's score, author and comment count live in the sibling row, so a score arriving
+late or edited in place reaches no subscriber: the collection sees the mutation, compares the
+member list, finds it unchanged, and stays quiet.
+
+The workaround is to subscribe to the whole page (`wrap(page).subscribe`), which emits on any
+change in the subtree. That works, but it gives up precision — every unrelated change re-applies
+the filters — and it makes every write re-entrant: the script had to become careful to write only
+what would differ, or applying triggered itself forever. Both costs come from the data being a
+sibling rather than a child.
+
+### 2. Children match by tag name, HTML tells elements apart by class — workaround (general, new)
 
 Every row here is a `<tr>`, and what distinguishes them is `class`. Child access is worse than it
 first looks: the stories sit in a nested table, so `wrap(page).tr` returns the **one** wrapper row,
-not the rows (`$deep('tr')` finds every row in the page). Real markup nests, so the shape-matched path is not just
-imprecise here, it does not reach the data at all.
+not the rows (`$deep('tr')` finds every row in the page). Real markup nests, so the
+shape-matched path is not just imprecise here, it does not reach the data at all.
 
 The story list is `$deep('tr.athing.submission', schema)`, and the selector has to be that precise:
 comment rows on `/item` are `tr.athing` too. So the selector form of `$deep` (#10) carried this
@@ -61,14 +75,6 @@ bookkeeping.
 row, because the page has to keep its own order and the rows are the UI. On third-party markup the
 useful half of e5x was the live collection, element atoms, and writes.
 
-### 7c. Thresholds need "has no value", which a schema cannot say — papercut (general, new)
-
-A job post has no `span.score` at all. Read through a schema, "missing" and "zero" are the same
-thing: a `'number'` leaf gives `NaN`, and the parsed text gives `0`. Either way a threshold would
-hide every job post, which blanks `/jobs` — a page we do not own. The adapter carries a separate
-`scored` flag taken from the element's presence. A schema has no way to express "absent", so any
-filter over optional fields needs that flag written by hand.
-
 ### 7b. The reader's general entries, revisited
 
 - **No concatenation of collections** (reader 3): did not come up. One page, one list. It is real,
@@ -77,6 +83,14 @@ filter over optional fields needs that flag written by hand.
   this app never builds a filtered view. It marks every row, so there is no view to go stale.
 - **Coarse element atoms** (reader 5): came back and helped again. `filters.ts` persists with one
   `wrap(element).subscribe`, exactly as the reader saved reading state.
+
+### 7c. Thresholds need "has no value", which a schema cannot say — papercut (general, new)
+
+A job post has no `span.score` at all. Read through a schema, "missing" and "zero" are the same
+thing: a `'number'` leaf gives `NaN`, and the parsed text gives `0`. Either way a threshold would
+hide every job post, which blanks `/jobs` — a page we do not own. The adapter carries a separate
+`scored` flag taken from the element's presence. A schema has no way to express "absent", so any
+filter over optional fields needs that flag written by hand.
 
 ### 8. The page never gets replaced — not observed here
 

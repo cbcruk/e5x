@@ -18,7 +18,7 @@ export type Row = Wrapped<typeof rowSchema>
 /** One story, read from the two rows it spans. */
 export interface Story {
   readonly row: Row
-  /** The `<tr>` after the title row, which holds score, author, age, and comments. */
+  /** The `<tr>` after the title row, which holds score, author, age, and comments; read live. */
   readonly subtext: Element | null
   readonly id: string
   readonly rank: number
@@ -60,26 +60,49 @@ const commentText = (subtext: Element | null): string =>
     .at(-1)?.textContent ?? ''
 
 function story(row: Row): Story {
-  // FRICTION: the rest of the story is the next sibling. e5x goes down a tree, never sideways,
-  // so this leaves e5x for `$el`.
-  const subtext = row.$el.nextElementSibling
-  const link = row.$deep('span.titleline > a', { href: 'string' } as const)[0]
-  const age = subtext ? wrap(subtext).$deep('span.age', { title: 'string' } as const)[0] : undefined
+  // Every field is a getter: the row this reads from can change, and half of a story lives in a
+  // sibling row that no atom here watches (FRICTION 1b), so nothing may be cached.
+  const subtext = (): Element | null => row.$el.nextElementSibling
+  const link = (): Element | undefined =>
+    row.$deep('span.titleline > a', { href: 'string' } as const)[0]?.$el
   return {
     row,
-    subtext,
-    id: row.id,
-    rank: count(text(row.$el, 'span.rank')),
+    get subtext() {
+      return subtext()
+    },
+    get id() {
+      return row.id
+    },
+    get rank() {
+      return count(text(row.$el, 'span.rank'))
+    },
     // FRICTION: `<a href>text</a>` holds an attribute and text. The typed member gives the
     // attribute; its text comes from the element.
-    title: link?.$el.textContent?.trim() ?? '',
-    url: link?.href ?? '',
-    site: text(row.$el, 'span.sitestr'),
-    author: text(subtext, 'a.hnuser'),
-    score: count(text(subtext, 'span.score')),
-    scored: subtext?.querySelector('span.score') !== null && subtext !== null,
-    comments: count(commentText(subtext)),
-    posted: Date.parse(age?.title ?? ''),
+    get title() {
+      return link()?.textContent?.trim() ?? ''
+    },
+    get url() {
+      return link()?.getAttribute('href') ?? ''
+    },
+    get site() {
+      return text(row.$el, 'span.sitestr')
+    },
+    get author() {
+      return text(subtext(), 'a.hnuser')
+    },
+    get score() {
+      return count(text(subtext(), 'span.score'))
+    },
+    get scored() {
+      return subtext()?.querySelector('span.score') != null
+    },
+    get comments() {
+      return count(commentText(subtext()))
+    },
+    get posted() {
+      const age = subtext()?.querySelector('span.age')
+      return Date.parse(age?.getAttribute('title') ?? '')
+    },
     get seen() {
       return row['data-e5x-seen']
     },
@@ -92,8 +115,9 @@ function story(row: Row): Story {
     set hidden(value) {
       row['data-e5x-hidden'] = value
       // Both rows have to follow, and the spacer after them.
-      subtext?.setAttribute('data-e5x-hidden', String(value))
-      const spacer = subtext?.nextElementSibling
+      const rest = subtext()
+      rest?.setAttribute('data-e5x-hidden', String(value))
+      const spacer = rest?.nextElementSibling
       if (spacer?.classList.contains('spacer')) {
         spacer.setAttribute('data-e5x-hidden', String(value))
       }
@@ -117,7 +141,8 @@ export function storyRows(page: Element): Collection<typeof rowSchema> {
 /** Reads the stories of a page, live: the atom emits when rows are added, removed, or reordered. */
 export function stories(page: Element): ReadableAtom<Story[]> {
   const rows = storyRows(page)
-  // One Story per row element, so identity survives re-reads.
+  // One Story per row element, so identity survives re-reads. The object caches nothing: every
+  // field reads the DOM when asked.
   const built = new WeakMap<Element, Story>()
   const read = (): Story[] =>
     rows.get().map((row) => {
