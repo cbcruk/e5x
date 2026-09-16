@@ -88,6 +88,19 @@ describe('static check: reads outside the view tree', () => {
     expect(warn).not.toHaveBeenCalled()
   })
 
+  it('sees a presence test with `in` as a read of that field', () => {
+    const { filters, sales } = ledger()
+    const hasMin = (item: { price: number }): boolean => 'min' in filters && item.price >= 0
+
+    sales.item.$where(hasMin).type.get()
+    expect(messages()).toHaveLength(1)
+    expect(messages()[0]).toContain('$where predicate "hasMin" reads <filters>.min')
+
+    warn.mockClear()
+    sales.item.$where(hasMin, [filters.$.min]).type.get()
+    expect(warn).not.toHaveBeenCalled()
+  })
+
   it('ignores reads inside the view tree, including the collection owner', () => {
     const { sales } = ledger()
     const sameVendor = (item: { type: string }): boolean => item.type !== sales.vendor

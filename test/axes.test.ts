@@ -191,7 +191,7 @@ test('a sibling is loose even when this element has a schema', () => {
   expect(first.$next).toBe(wrap(page.$el.querySelectorAll('row')[1]!))
 })
 
-test('$text is one atom per element, so the path stays memoized', () => {
+test('$text is one atom per wrapped element, so the path stays memoized', () => {
   const item = wrap(markup('<item>fresh</item>'))
 
   expect(item.$text).toBe(item.$text)
@@ -203,6 +203,17 @@ test('`in` does not deny a non-configurable own property of the element', () => 
 
   // A proxy that answered `false` here would throw a TypeError for the invariant.
   expect('pinned' in sales).toBe(true)
+})
+
+test('`in` does not throw when the element is not extensible', () => {
+  const sales = wrap(markup('<sales vendor="John"></sales>'))
+  // A configurable expando on a sealed-off element: the other half of the proxy invariant, which
+  // forbids denying any own property of a non-extensible target.
+  ;(sales.$el as unknown as Record<string, unknown>)['foo'] = 1
+  Object.preventExtensions(sales.$el)
+
+  expect('foo' in sales).toBe(true)
+  expect('vendor' in sales).toBe(true)
 })
 
 test('`in` on a collection rejects unknown $ names even when a member has the attribute', () => {
@@ -224,6 +235,19 @@ test('`in` answers for the reserved bare names, not for data with those names', 
   expect(typeof sales.toString).toBe('function')
   expect(sales.$attr.toString).toBe('data')
   expect(Symbol.toPrimitive in sales).toBe(true)
+})
+
+test('`in` answers for the reserved bare names on a collection and a column too', () => {
+  const sales = wrap(markup('<sales><item price="3"></item></sales>'))
+
+  // The get trap serves these on all three, so `in` must not deny them on any of them.
+  for (const name of ['get', 'subscribe', 'toString', 'valueOf']) {
+    expect(name in sales.item).toBe(true)
+    expect(name in sales.item.price).toBe(true)
+  }
+  expect(Symbol.toPrimitive in sales.item).toBe(true)
+  expect(Symbol.toPrimitive in sales.item.price).toBe(true)
+  expect(String(sales.item.price)).toBe('3')
 })
 
 test('`in` on a column asks about positions, and on $attr about attributes', () => {

@@ -103,8 +103,10 @@ if (row.note.$length.get() > 0) {
 
 `in` is E4X's `[[HasProperty]]`: it answers for children and attributes. On a collection a number
 asks whether that index exists, and a name asks whether **any** member has it — the same question
-E4X's XMLList answers. On a column, which holds values rather than elements, only a position can
-be asked; `$attr` answers for attributes alone.
+E4X's XMLList answers. On a column, which holds values rather than elements, a name asks only about
+its own members (`'$sum' in row.price`) and a number about a position; `$attr` answers for
+attributes alone. Enumeration is untouched: `for (const key in element)` still walks the DOM
+object's properties, so it does not agree with `in`.
 
 With a schema, missing leaves coerce instead (`''`, `NaN`, `false`).
 

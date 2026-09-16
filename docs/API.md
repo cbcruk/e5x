@@ -392,7 +392,10 @@ because a table row's data often sits in the row after it.
 
 The result is loose: a sibling's shape is not part of this element's schema. Reach its typed
 fields with `$deep(selector, schema)` on it. Because a wrapped element is an atom, the sibling can
-also be subscribed to on its own, without watching the whole page.
+also be subscribed to on its own, without watching the whole page. The atom is rooted in the
+element this returned, not in the relationship: if the markup later replaces that sibling, a
+subscription taken through `$next` keeps watching the detached node while a fresh `$next` reports
+the new one. Read `$next` again after a re-render, or subscribe to the parent.
 
 **Type:** `readonly $next: LooseWrapped | null`
 
@@ -872,8 +875,11 @@ the reason, or tracked as an issue.
   `[[HasProperty]]` (§9.1.1.6, §9.2.1.5): on a wrapped element, its children, its attributes, and
   the library surface — so `'title' in element` is `false` unless the markup has that name, even
   though `Element.prototype.title` exists. On a collection, an index in range or a name **any**
-  member has. On a column only a position, and on `$attr` only attributes. It is the presence test
-  loose mode otherwise lacks, because a missing name reads as a truthy empty collection.
+  member has. On a column its own members and a position, and on `$attr` only attributes. It is the
+  presence test loose mode otherwise lacks, because a missing name reads as a truthy empty
+  collection. Only `in` moved: enumeration (`for…in`, `Object.keys`) is still the DOM object's, so
+  `'title' in element` is `false` while `for (const key in element)` yields `title`. E4X enumerates
+  the data too; matching it would need `ownKeys` and `getOwnPropertyDescriptor` traps as well.
 - **There is no synchronous `length`.** _Intended._ The `$` prefix keeps library names out of the
   data's way: `album.track.length` is a data column, and `album.track.$length.get()` is the member
   count.

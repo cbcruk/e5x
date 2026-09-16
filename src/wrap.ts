@@ -213,8 +213,10 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
         // The get trap serves this one; everything else falls through to the element.
         return key === Symbol.toPrimitive || Reflect.has(target, key)
       }
-      // A proxy may not deny a non-configurable own property of its target.
-      if (Reflect.getOwnPropertyDescriptor(target, key)?.configurable === false) {
+      // A proxy may not deny an own property that is non-configurable, nor any own property at
+      // all once the target is not extensible. Elements carry expandos, so both can happen.
+      const own = Reflect.getOwnPropertyDescriptor(target, key)
+      if (own && (!own.configurable || !Reflect.isExtensible(target))) {
         return true
       }
       if (RESERVED.has(key)) {

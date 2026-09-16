@@ -679,6 +679,16 @@ ECMA-357 전문을 읽고 e5x와 대조한 기록이 `docs/E4X.md`. 거기서 �
 - 리뷰에서 받은 것: `in`이 `toString`/`valueOf`(+`Symbol.toPrimitive`)에도 답해야 한다 —
   `coerce.ts`의 `RESERVED`를 export해 한 곳에서 관리. 일관성을 위해 column(위치만)과 `$attr`
   (속성만)에도 `has`를 붙였다.
+- 리뷰 2회차(must-fix 0, suggestion 5)에서 받은 것: ① `has`가 proxy 불변식의 **절반만** 막았다 —
+  non-configurable own property는 봤지만 non-extensible target의 own property는 안 봐서,
+  `el.foo = 1; Object.preventExtensions(el)` 뒤의 `'foo' in wrap(el)`이 **throw**했다(이전엔 던지지 않던
+  연산). ② `in`이 coercion 훅에 element는 `true`, collection/column은 `false`로 답했다(get trap은 셋 다
+  서비스) → `RESERVED`를 세 곳에서 공유. ③ `has`에 넣은 `noteRead`를 지워도 120/120 통과 — 1회차 must-fix와
+  같은 부류(증명되지 않은 성질)라 dev 테스트 추가. ④ `in`과 `for…in`이 정면으로 어긋난다(`'title' in el`은
+  false인데 열거는 `title`을 낸다) — E4X는 열거도 데이터지만 `ownKeys` 트랩이 필요해 문서화만. ⑤ `$next`로
+  잡은 구독은 형제가 **교체되면** 조용히 죽는다(atom이 관계가 아니라 그 요소에 뿌리내리므로) — 문서화.
+  변이 4개로 새 테스트가 각각 잡는 것을 확인(각각 1개 실패).
+
 - **`$text`를 dep으로 쓸 때의 정밀도**: `derived`가 atom을 "subtree 전체" source로 등록해서,
   `$text`를 dep으로 주면 바깥 **속성** 읽기까지 covered로 판정돼 정적 경고가 죽었다. `dev.ts`에
   `TEXT` 종류를 추가해 "그 이름의 child text가 있을 때만 커버"로 좁혔다. 같은 이름 child가 있는데

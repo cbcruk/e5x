@@ -21,6 +21,7 @@ import {
   readRaw,
   fromDom,
   writeField,
+  RESERVED,
 } from './coerce'
 import type {
   Deps,
@@ -381,6 +382,10 @@ export function createCollection(config: CollectionConfig): LooseCollection {
     // E4X's XMLList [[HasProperty]] (§9.2.1.5): an index within range, or a name any member has.
     has(target, key) {
       if (Object.hasOwn(target, key)) {
+        return true
+      }
+      // The coercion hooks the get trap serves, answered the same way a wrapped element does.
+      if (key === Symbol.toPrimitive || (typeof key === 'string' && RESERVED.has(key))) {
         return true
       }
       if (typeof key === 'string' && !isLibraryName(key)) {
