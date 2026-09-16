@@ -22,7 +22,7 @@ sections all put related data in siblings.
 
 Every row here is a `<tr>`, and what distinguishes them is `class`. Child access is worse than it
 first looks: the stories sit in a nested table, so `wrap(page).tr` returns the **one** wrapper row,
-not the rows (`$deep('tr')` finds 14). Real markup nests, so the shape-matched path is not just
+not the rows (`$deep('tr')` finds every row in the page). Real markup nests, so the shape-matched path is not just
 imprecise here, it does not reach the data at all.
 
 The story list is `$deep('tr.athing.submission', schema)`, and the selector has to be that precise:
@@ -60,6 +60,14 @@ bookkeeping.
 `$where` / `$sort` / columns never appeared. The app does not _select_ a subset, it _marks_ every
 row, because the page has to keep its own order and the rows are the UI. On third-party markup the
 useful half of e5x was the live collection, element atoms, and writes.
+
+### 7c. Thresholds need "has no value", which a schema cannot say — papercut (general, new)
+
+A job post has no `span.score` at all. Read through a schema, "missing" and "zero" are the same
+thing: a `'number'` leaf gives `NaN`, and the parsed text gives `0`. Either way a threshold would
+hide every job post, which blanks `/jobs` — a page we do not own. The adapter carries a separate
+`scored` flag taken from the element's presence. A schema has no way to express "absent", so any
+filter over optional fields needs that flag written by hand.
 
 ### 7b. The reader's general entries, revisited
 

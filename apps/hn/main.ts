@@ -97,9 +97,13 @@ export function mount(page: Element, options: Options = {}): { stop(): void } {
     const words = list(filters.highlight)
     for (const story of current) {
       story.seen = seen.has(story.id)
+      // A job post has no score and no comments, so a threshold says nothing about it. Without
+      // this, any saved threshold would blank /jobs, a page we do not own.
+      const belowThreshold =
+        story.scored &&
+        (story.score < filters['min-score'] || story.comments < filters['min-comments'])
       const hide =
-        story.score < filters['min-score'] ||
-        story.comments < filters['min-comments'] ||
+        belowThreshold ||
         (filters['hide-seen'] && story.seen) ||
         muted.some((domain) => story.site.toLowerCase().endsWith(domain))
       story.hidden = hide
@@ -154,6 +158,15 @@ export function mount(page: Element, options: Options = {}): { stop(): void } {
   return {
     stop() {
       for (const stop of stops) stop()
+      // Leave the page as it was found: our stylesheet goes, so highlights and hidden markers
+      // would otherwise stay visible in markup we do not own.
+      for (const story of list$.get()) {
+        highlightTitles(story, [])
+        story.row.$el.removeAttribute('data-e5x-seen')
+        for (const row of [story.row.$el, story.subtext, story.subtext?.nextElementSibling]) {
+          row?.removeAttribute('data-e5x-hidden')
+        }
+      }
       panel.remove()
       sheet.remove()
     },

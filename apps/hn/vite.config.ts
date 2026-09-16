@@ -32,7 +32,8 @@ function userscriptBanner(): Plugin {
       for (const [name, file] of Object.entries(bundle)) {
         if (file.type !== 'chunk') continue
         const written = readFileSync(path.join(options.dir ?? '', name), 'utf8')
-        if (!written.startsWith('// ==UserScript==')) {
+        // The whole block, not just its first line: a truncated one is rejected just the same.
+        if (!written.startsWith(banner)) {
           throw new Error(`${name} lost its userscript metadata block`)
         }
       }

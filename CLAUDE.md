@@ -636,6 +636,9 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   (`generateBundle`로 붙이고 `writeBundle`에서 없으면 빌드 실패), ② `tr.athing`은 `/item`의 댓글 행도 포함 →
   저장된 필터가 **남의 토론 전체를 숨김**(`tr.athing.submission`으로 한정), ③ job post는 댓글 링크가 없어 `span.age`의
   링크에서 시간을 댓글 수로 읽음(age 내부 링크 제외). fixture에 job·댓글 행·`1,234` 사례가 없어 테스트가 전부 놓쳤다.
+- 2회차: 배너 가드가 첫 줄만 봐서 잘린 블록을 통과시킴(전체 비교로), **`/jobs`는 점수가 아예 없어** 저장된 threshold가
+  페이지를 통째로 비움(`scored` 플래그로 제외 — schema는 "값 없음"을 표현 못 한다, FRICTION 7c), `stop()`이 `<mark>`와
+  `data-*`를 남의 페이지에 남김. 실제 사이트 재확인: threshold 저장 상태에서 `/jobs` 30행 중 0개 숨김, `/item` 정상.
 
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (2026-09 채택)
 

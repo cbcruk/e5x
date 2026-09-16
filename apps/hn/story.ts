@@ -28,6 +28,8 @@ export interface Story {
   readonly author: string
   /** The score, from text like `713 points`; `0` for job posts, which have none. */
   readonly score: number
+  /** Whether the page gives this story a score at all. Job posts do not. */
+  readonly scored: boolean
   /** The comment count, from text like `241 comments`; `0` for `discuss`. */
   readonly comments: number
   /** The post time, from the `title` attribute of `span.age`. */
@@ -75,6 +77,7 @@ function story(row: Row): Story {
     site: text(row.$el, 'span.sitestr'),
     author: text(subtext, 'a.hnuser'),
     score: count(text(subtext, 'span.score')),
+    scored: subtext?.querySelector('span.score') !== null && subtext !== null,
     comments: count(commentText(subtext)),
     posted: Date.parse(age?.title ?? ''),
     get seen() {

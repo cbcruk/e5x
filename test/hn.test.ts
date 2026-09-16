@@ -97,12 +97,15 @@ describe('reading stories from markup we do not own', () => {
     expect(document.querySelectorAll('e5x-filters')).toHaveLength(1)
     second.stop()
 
+    // Kept so a write to it after stop() can be checked below.
+    const leftover = document.querySelector('e5x-filters')!
     app.stop()
     expect(document.querySelector('#e5x-hn')).toBeNull()
     expect(document.querySelector('e5x-filters')).toBeNull()
 
-    // Nothing left listening: a write to the page saves nothing.
+    // Nothing left listening: even a write to the filter element saves nothing.
     store.delete('e5x-hn:filters')
+    leftover.setAttribute('min-score', '999')
     document.querySelector('tr.athing.submission')!.setAttribute('data-e5x-hidden', 'true')
     await flush()
     expect(store.has('e5x-hn:filters')).toBe(false)
@@ -117,20 +120,26 @@ describe('the filter bar', () => {
 
     type('min-score', '100')
     await flush()
+    // The job post stays: the page gives it no score, so the threshold does not apply to it.
     expect(shown()).toEqual([
       'A well-liked post',
       'Another noisy domain post',
       'A post with many points',
+      'Example Corp is hiring',
     ])
     // The subtext row and the spacer follow the story row.
     const hiddenRow = document.getElementById('102')!
     expect(hiddenRow.nextElementSibling!.getAttribute('data-e5x-hidden')).toBe('true')
-    expect(panel('.count').textContent).toBe('3 shown, 3 hidden')
+    expect(panel('.count').textContent).toBe('4 shown, 2 hidden')
 
     type('min-score', '0')
     type('min-comments', '9')
     await flush()
-    expect(shown()).toEqual(['A well-liked post', 'A post with many points'])
+    expect(shown()).toEqual([
+      'A well-liked post',
+      'A post with many points',
+      'Example Corp is hiring',
+    ])
   })
 
   it('mutes domains and keeps the filters after a reload', async () => {
@@ -175,6 +184,33 @@ describe('the filter bar', () => {
     expect(shown()).toEqual([])
   })
 
+  it('does not hide stories the page gives no score, such as job posts', async () => {
+    mount(page(), { storage })
+    await flush()
+    type('min-score', '100')
+    type('min-comments', '50')
+    await flush()
+
+    // A threshold says nothing about a post with no score: /jobs is all such posts.
+    expect(shown()).toContain('Example Corp is hiring')
+  })
+
+  it('leaves the page as it found it when stopped', async () => {
+    const app = mount(page(), { storage })
+    await flush()
+    type('min-score', '100')
+    type('highlight', 'post')
+    await flush()
+    expect(document.querySelectorAll('span.titleline mark').length).toBeGreaterThan(0)
+
+    app.stop()
+    await flush()
+
+    expect(document.querySelectorAll('span.titleline mark')).toHaveLength(0)
+    expect(document.querySelectorAll('[data-e5x-hidden]')).toHaveLength(0)
+    expect(document.querySelectorAll('[data-e5x-seen]')).toHaveLength(0)
+  })
+
   it('highlights words in titles as text, never as markup', async () => {
     mount(page(), { storage })
     await flush()
@@ -209,13 +245,13 @@ describe('the filter bar', () => {
     const table = document.querySelector('tr.athing')!.parentElement!
     table.insertAdjacentHTML(
       'beforeend',
-      `<tr class="athing submission" id="105"><td class="title"><span class="rank">5.</span></td>
+      `<tr class="athing submission" id="107"><td class="title"><span class="rank">5.</span></td>
         <td class="title"><span class="titleline"><a href="https://late.example/e">A late arrival</a><span class="sitebit comhead"> (<a href="from?site=late.example"><span class="sitestr">late.example</span></a>)</span></span></td></tr>
-       <tr><td class="subtext"><span class="score" id="score_105">5 points</span> by <a href="user?id=ez" class="hnuser">ez</a> <span class="age" title="2026-09-16T01:00:00"><a href="item?id=105">1 minute ago</a></span> | <a href="item?id=105">1&nbsp;comment</a></span></td></tr>`,
+       <tr><td class="subtext"><span class="score" id="score_107">5 points</span> by <a href="user?id=ez" class="hnuser">ez</a> <span class="age" title="2026-09-16T01:00:00"><a href="item?id=107">1 minute ago</a></span> | <a href="item?id=107">1&nbsp;comment</a></span></td></tr>`,
     )
     await flush()
 
     expect(shown()).not.toContain('A late arrival')
-    expect(panel('.count').textContent).toBe('3 shown, 4 hidden')
+    expect(panel('.count').textContent).toBe('4 shown, 3 hidden')
   })
 })
