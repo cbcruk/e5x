@@ -1,6 +1,6 @@
 import { createCollection, deepAxis } from './collection'
 import { derived, watch } from './reactive'
-import { DEV, noteRead, registerSource } from './dev'
+import { DEV, noteRead, registerSource, TEXT } from './dev'
 import {
   assertValidDescriptor,
   childrenNamed,
@@ -11,6 +11,7 @@ import {
   isLeaf,
   isLibraryName,
   childDescriptor,
+  RESERVED,
 } from './coerce'
 import type {
   LooseCollection,
@@ -41,6 +42,7 @@ function attributeView(element: Element): Record<string, string | null> {
       }
       return true
     },
+    has: (_target, key) => typeof key === 'string' && element.hasAttribute(key),
   })
 }
 
@@ -93,7 +95,9 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
   const text = (): ReadableAtom<string> => {
     if (!textAtom) {
       textAtom = derived(element, () => element.textContent ?? '')
-      registerSource(textAtom, element)
+      // `derived` registers it as covering the whole subtree. It follows only the text, so a
+      // dep of `$text` must not mark a read of a sibling attribute as covered.
+      registerSource(textAtom, element, TEXT)
     }
     return textAtom
   }
@@ -206,13 +210,14 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
     // false for real data, true for DOM names like `title` and `id`.
     has(target, key) {
       if (typeof key === 'symbol') {
-        return Reflect.has(target, key)
+        // The get trap serves this one; everything else falls through to the element.
+        return key === Symbol.toPrimitive || Reflect.has(target, key)
       }
       // A proxy may not deny a non-configurable own property of its target.
       if (Reflect.getOwnPropertyDescriptor(target, key)?.configurable === false) {
         return true
       }
-      if (key === 'get' || key === 'subscribe') {
+      if (RESERVED.has(key)) {
         return true
       }
       if (isLibraryName(key)) {

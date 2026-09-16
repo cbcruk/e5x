@@ -868,6 +868,12 @@ the reason, or tracked as an issue.
   rely on. On an element, data with those names is reachable through `$attr`. A collection has
   no `$attr`: `rows.get` is the atom method, so a column of a `get` field is reachable only through
   the members (`for (const row of rows) row.$attr.get`).
+- **`in` answers about data, not about the DOM object.** _Intended._ It implements E4X's
+  `[[HasProperty]]` (§9.1.1.6, §9.2.1.5): on a wrapped element, its children, its attributes, and
+  the library surface — so `'title' in element` is `false` unless the markup has that name, even
+  though `Element.prototype.title` exists. On a collection, an index in range or a name **any**
+  member has. On a column only a position, and on `$attr` only attributes. It is the presence test
+  loose mode otherwise lacks, because a missing name reads as a truthy empty collection.
 - **There is no synchronous `length`.** _Intended._ The `$` prefix keeps library names out of the
   data's way: `album.track.length` is a data column, and `album.track.$length.get()` is the member
   count.

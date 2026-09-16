@@ -177,3 +177,66 @@ test('a sibling wrapped element is the same proxy as wrapping it directly', () =
 
   expect(a.$next).toBe(wrap(page.$el.querySelector('b')!))
 })
+
+test('a sibling is loose even when this element has a schema', () => {
+  const page = wrap(markup('<page><row n="1"></row><row n="2"></row></page>'), {
+    row: [{ n: 'number' }],
+  } as const)
+  const first = page.row[0]!
+
+  expect(first.n).toBe(1)
+  // Handing the sibling this element's schema would coerce it, and would be wrong for markup
+  // whose next row has another shape — which is the case the axis exists for.
+  expect(first.$next!.n).toBe('2')
+  expect(first.$next).toBe(wrap(page.$el.querySelectorAll('row')[1]!))
+})
+
+test('$text is one atom per element, so the path stays memoized', () => {
+  const item = wrap(markup('<item>fresh</item>'))
+
+  expect(item.$text).toBe(item.$text)
+})
+
+test('`in` does not deny a non-configurable own property of the element', () => {
+  const sales = wrap(markup('<sales vendor="John"></sales>'))
+  Object.defineProperty(sales.$el, 'pinned', { value: 1 })
+
+  // A proxy that answered `false` here would throw a TypeError for the invariant.
+  expect('pinned' in sales).toBe(true)
+})
+
+test('`in` on a collection rejects unknown $ names even when a member has the attribute', () => {
+  const sales = wrap(markup('<sales><item></item></sales>'))
+  sales.item[0]!.$el.setAttribute('$nope', 'x')
+
+  expect('$nope' in sales.item).toBe(false)
+  expect('$where' in sales.item).toBe(true)
+})
+
+test('`in` answers for the reserved bare names, not for data with those names', () => {
+  const sales = wrap(markup('<sales></sales>'))
+  sales.$el.setAttribute('toString', 'data')
+
+  for (const name of ['get', 'subscribe', 'toString', 'valueOf']) {
+    expect(name in sales).toBe(true)
+  }
+  // The name belongs to the library; the data is reachable only through $attr.
+  expect(typeof sales.toString).toBe('function')
+  expect(sales.$attr.toString).toBe('data')
+  expect(Symbol.toPrimitive in sales).toBe(true)
+})
+
+test('`in` on a column asks about positions, and on $attr about attributes', () => {
+  const sales = wrap(
+    markup('<sales vendor="John"><item price="3"></item><item price="5"></item></sales>'),
+  )
+
+  expect(0 in sales.item.price).toBe(true)
+  expect(1 in sales.item.price).toBe(true)
+  expect(2 in sales.item.price).toBe(false)
+  expect('$sum' in sales.item.price).toBe(true)
+  expect('nope' in sales.item.price).toBe(false)
+
+  expect('vendor' in sales.$attr).toBe(true)
+  expect('nope' in sales.$attr).toBe(false)
+})

@@ -671,6 +671,19 @@ ECMA-357 전문을 읽고 e5x와 대조한 기록이 `docs/E4X.md`. 거기서 �
   **11개 중 0개가 실패** — `derived`의 동등 비교가 거친 root를 가려서다. detached 트리 테스트를 추가해 잡았다.
 - 실제 Chromium이 happy-dom이 놓친 픽스처 버그를 잡았다: `<table>` 밖의 `<tr>`은 HTML 파서가 버린다.
   형제 축 테스트는 진짜 표로 다시 썼다(HN 마크업과도 같아짐).
+- 리뷰 1회차 must-fix: **"형제는 loose"라는 계약에 테스트가 없었다.** `wrapNode(next, null)`을
+  `wrapNode(next, descriptor)`로 바꿔도 113/113 통과 — 모든 테스트가 loose로만 감싸고 있었다.
+  문서에 세 번 적은 성질을 아무도 증명하지 않은 셈. 스키마 있는 부모에서 `$next`가 문자열을 주는지
+  확인하는 테스트 추가. 리뷰어가 제안한 나머지 변이 3개(`$text` atom identity, 프록시 불변식 가드,
+  collection의 `isLibraryName` 가드)도 전부 살아남아 테스트를 붙였다.
+- 리뷰에서 받은 것: `in`이 `toString`/`valueOf`(+`Symbol.toPrimitive`)에도 답해야 한다 —
+  `coerce.ts`의 `RESERVED`를 export해 한 곳에서 관리. 일관성을 위해 column(위치만)과 `$attr`
+  (속성만)에도 `has`를 붙였다.
+- **`$text`를 dep으로 쓸 때의 정밀도**: `derived`가 atom을 "subtree 전체" source로 등록해서,
+  `$text`를 dep으로 주면 바깥 **속성** 읽기까지 covered로 판정돼 정적 경고가 죽었다. `dev.ts`에
+  `TEXT` 종류를 추가해 "그 이름의 child text가 있을 때만 커버"로 좁혔다. 같은 이름 child가 있는데
+  `$attr`로 명시적으로 읽는 경우는 여전히 조용한데, 그건 e5x가 문서화한 attr/child 충돌 자리이고
+  오탐보다 미탐을 택한 것.
 
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (2026-09 채택)
 
@@ -745,9 +758,9 @@ ECMA-357 전문을 읽고 e5x와 대조한 기록이 `docs/E4X.md`. 거기서 �
 - 필드 이름 `get`/`subscribe`는 schema에서 금지, loose 모드에선 collection 레벨 열로 접근 불가
   (atom 프로토콜과 맞바꾼 비용).
 - inline arrow predicate/comparator는 매번 새 함수라 뷰 공유 불가 — 공유하려면 함수를 끌어올릴 것.
-- 크기: sub-kB 미학에서 멀어지는 중. 앱 production 번들(minify+gzip) 4.01kB, 예산 4.2kB (`pnpm size`).
+- 크기: sub-kB 미학에서 멀어지는 중. 앱 production 번들(minify+gzip) 4.06kB, 예산 4.2kB (`pnpm size`).
   캐시 계층 + Phase 10 API + #2 캐시 해제 + #28 축 3개. `production` 조건을 안 쓰는 번들러(esbuild·Rollup
-  기본)에는 dev 체크 코드가 남는다(비활성, 4.69kB). **크기로 기능을 거르지 않기로 함 (사용자 결정
+  기본)에는 dev 체크 코드가 남는다(비활성, 4.76kB). **크기로 기능을 거르지 않기로 함 (사용자 결정
   2026-09-16)** — 예산은 드리프트 감지용이고, 필요한 멤버는 넣고 예산을 올린다.
 - deps 누락은 dev에서만, best-effort로 탐지: proxy 밖 읽기는 상태가 바뀐 뒤 읽힐 때만, 구독만 하고
   읽지 않는 뷰는 못 잡음. 같은 틱에 계산→외부 변경→읽기도 놓침.

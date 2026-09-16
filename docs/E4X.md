@@ -210,8 +210,9 @@ non-`$` name on a leaf is `undefined`; delegating to the string value would not 
 collection — a deliberate decision `$push` and `subscribe` depend on — so there is no miss to hook,
 and delegating would make the same path yield a collection for one element and a function for
 another, depending on whether the data happens to be there. Typed leaves and loose attributes are
-already plain strings, so `.toUpperCase()` works on them today; the remaining gap is a loose child
-element's text, which `$text` (§13.4.4.37, grafted in #28) covers.
+already plain strings, so `.toUpperCase()` works on them today. The remaining gap is a loose child
+element's text, where `$text` (§13.4.4.37, grafted in #28) reaches the value — on the element, so
+`row.note[0]!.$text`, since `row.note` is a collection and collections have no `$text`.
 
 ### 4.6 Wildcards
 

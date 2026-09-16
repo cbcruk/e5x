@@ -101,8 +101,10 @@ if (row.note.$length.get() > 0) {
 } // the same question, when you want the count anyway
 ```
 
-`in` is E4X's `[[HasProperty]]`: it answers for children and attributes, on wrapped elements and
-on collections (where a number asks whether that index exists).
+`in` is E4X's `[[HasProperty]]`: it answers for children and attributes. On a collection a number
+asks whether that index exists, and a name asks whether **any** member has it — the same question
+E4X's XMLList answers. On a column, which holds values rather than elements, only a position can
+be asked; `$attr` answers for attributes alone.
 
 With a schema, missing leaves coerce instead (`''`, `NaN`, `false`).
 

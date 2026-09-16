@@ -54,6 +54,26 @@ describe('static check: reads outside the view tree', () => {
     expect(messages()[0]).toContain('<filters>.min')
   })
 
+  it('treats a $text dep as cover for child text, but not for an attribute', () => {
+    const { filters, sales } = ledger()
+    // `min` stays an attribute; `floor` becomes child text, read loosely since it is not in the
+    // schema (the same element, so the dep registered on it covers both reads).
+    filters.$el.innerHTML = '<floor>2</floor>'
+    const loose = wrap(filters.$el)
+    const aboveFloor = (item: { price: number }): boolean => item.price >= Number(loose.floor)
+    const aboveMin = (item: { price: number }): boolean => item.price >= filters.min
+
+    // The text atom does follow child text, so this dep really does invalidate the view.
+    sales.item.$where(aboveFloor, [filters.$text]).type.get()
+    expect(warn).not.toHaveBeenCalled()
+
+    // An attribute is outside what a text atom follows: without the warning, the view would go
+    // stale unnoticed.
+    sales.item.$where(aboveMin, [filters.$text]).type.get()
+    expect(messages()).toHaveLength(1)
+    expect(messages()[0]).toContain('<filters>.min')
+  })
+
   it('checks comparators and $attr reads, and inherits deps from upstream views', () => {
     const { filters, sales } = ledger()
     const byDir = (a: { price: number }, b: { price: number }): number =>

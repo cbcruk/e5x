@@ -110,6 +110,17 @@ export function createColumn(config: ColumnConfig): LeafColumn {
     deleteProperty() {
       return false
     },
+    // A column holds values, so `in` can only be about positions.
+    has(target, key) {
+      if (Object.hasOwn(target, key)) {
+        return true
+      }
+      if (typeof key === 'string') {
+        const index = Number(key)
+        return Number.isInteger(index) && index >= 0 && index < values().length
+      }
+      return false
+    },
   }) as unknown as LeafColumn
   registerSource(column, root)
   return column

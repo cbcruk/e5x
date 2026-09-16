@@ -29,7 +29,7 @@ const productionEntry = path.join(root, 'dist/index.production.js')
 
 // Budgets for minified + gzipped production bundles, in bytes. Raise one only on purpose, in the
 // same change that needs it, and say why in the commit.
-// Raised for the E4X grafts in #28 (`in`, `$next`/`$prev`, `$text`), which cost 172 B gzip
+// Raised for the E4X grafts in #28 (`in`, `$next`/`$prev`, `$text`), which cost 221 B gzip
 // together. The decision was to take the members and pay the bytes, not to fit them in.
 const budgets = {
   e5x: 4_200,
