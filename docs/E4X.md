@@ -9,6 +9,89 @@ of e5x's open questions the spec had already answered.
 
 This is a study note, not a decision record. Where it suggests something, that is a suggestion.
 
+## 0. Why it existed, and why it did not survive
+
+The standard states almost no motivation — §6's design principles are all there is. The context it
+assumes is worth recording anyway, because it decides how much of E4X is worth grafting.
+
+ECMA-357 was proposed by BEA Systems; 1st edition June 2004, 2nd edition December 2005. It shipped
+in SpiderMonkey and Rhino, and in ActionScript 3. SpiderMonkey removed it in 2013 (Firefox 21).
+
+When it was designed, "data" meant XML: SOAP and WSDL web services, configuration files, XHTML,
+RSS. JSON was named in 2001 but only became the default after RFC 4627 (2006). Touching XML from
+ECMAScript meant one of two things:
+
+1. **A DOM API** — `getElementsByTagName("item").item(0).getAttribute("type")`. A
+   language-neutral interface ported from Java, where accessor verbs bury the data's own words.
+2. **String concatenation** — `"<item type='" + t + "'/>"`. No escaping, no structure, no types.
+
+So E4X had three goals: make XML a first-class value with literals and operators; make the access
+vocabulary the data's vocabulary; and keep applications loosely coupled to the document's shape —
+§6's words, _"applications should be able to extract a value deeply nested within an XML structure,
+without specifying the full path to the data"_, which is why `..` exists.
+
+JSON then took two of the three away for free:
+
+| E4X's goal                          | In a JSON world                                                           |
+| ----------------------------------- | ------------------------------------------------------------------------- |
+| XML as a first-class value          | JSON's syntax **is** ECMAScript's object literal syntax; nothing to add   |
+| Access vocabulary = data vocabulary | `data.item[0].quantity` already works                                     |
+| Loose coupling (`..`)               | Still missing — but REST payloads are shallow, so the pain shrank with it |
+
+E4X paid for the second goal with lexer mode-switching. In a JSON world that goal is the default.
+That is the honest reason it was removed: the cost was a syntax extension, and the problem it
+bought had dissolved.
+
+### The frame that explains both halves: a writable embedded query language
+
+`.()`, `..` and `@` are XPath axes smuggled into expression syntax, and §6 says as much —
+_"It is a non-goal of E4X to provide, for example, the full functionality of XPath"_ (Minimal),
+with Annex A's optional `xpath()` as the way out (Complementary). E4X is a deliberately partial
+query language over XML, distinguished from XPath by one thing: its paths are **writable**.
+
+Embedded query languages live and die with the data source they are attached to.
+
+| Language                              | Data source                | Outcome              |
+| ------------------------------------- | -------------------------- | -------------------- |
+| SQL, and its builders (Drizzle, LINQ) | relational databases       | alive                |
+| jq                                    | JSON                       | alive                |
+| pandas                                | dataframes                 | alive                |
+| CSS selectors                         | the DOM                    | alive                |
+| **E4X**                               | **XML as the wire format** | died with the source |
+
+### What this means for e5x
+
+A query language does two jobs: **selection** (which nodes) and **projection and aggregation**
+(which values). On the DOM they are not equally vacant.
+
+- **Selection is already taken, by CSS selectors.** e5x concedes this in code: `$deep(name)` is
+  `element.querySelectorAll(name)` (`src/collection.ts`). The descendant axis is a delegation, not
+  an invention, which is why the userscript in `apps/hn` reaches for `$deep(selector)` and never
+  for `$where`.
+- **Projection and aggregation are vacant.** CSS can select a set of rows but cannot read one
+  field across them, and has no `sum`. §9.2.1.1 — XMLList `[[Get]]` applies `[[Get]]` to every
+  member and concatenates — is exactly `Column`, and `$sum`/`$avg` are the part no selector engine
+  offers.
+- **Writable paths are rare** (`UPDATE` in SQL; XPath and jq have none), and **subscribable paths
+  exist nowhere**, because they only mean something when the queried source is mutable. That is
+  the one axis e5x does not inherit, and §10.3.2's _Map-to_ (see §2 below) is the spec anticipating
+  the mutable source without the reactivity.
+
+Dogfooding measured which half gets used. Across `apps/hn` (507 lines) and `apps/reader` (711
+lines), the most-used member of the library is `$el` — the escape hatch — ten times in each. The
+query half appears in exactly two lines, and they are the same expression twice:
+`entry.$where({ read: false }).$length`, once in the RSS adapter and once in the Atom one
+(`apps/reader/feed.ts`). `$sort`, `$push` and every `Column` member, aggregates included, appear
+**zero** times in both apps. The half inherited from E4X is nearly unused; the half E4X did not
+have — write and subscribe — is what both apps are built on. #31 rewrites both apps on the members
+added in #28 and records the counts again.
+
+Read as a suggestion, per the note above: the identity sentence that matches this evidence is _a
+minimal query language for a mutable DOM tree, whose paths can be written to and subscribed to,
+delegating selection to CSS selectors and supplying the projection, aggregation and reactivity that
+selectors have no answer for_. Whether to adopt it — and whether to keep pursuing the selection
+half — belongs to #12, not here.
+
 ## 1. What the spec is
 
 Two types, three operators, and one rule repeated everywhere.
