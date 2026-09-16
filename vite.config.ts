@@ -49,6 +49,7 @@ export default defineConfig(({ mode }) => ({
             'test/lifecycle.test.ts',
             'test/deep.test.ts',
             'test/reader.test.ts',
+            'test/hn.test.ts',
           ],
           browser: {
             enabled: true,

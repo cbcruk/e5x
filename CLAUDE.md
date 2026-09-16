@@ -615,6 +615,35 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   construct(WordPress `type="html"`), xhtml의 script/style 텍스트, BOM 우선 디코딩, 겹친 새로고침은 최신 것만 반영.
 - #5는 이 앱을 **실제로 사용한 뒤** 기록을 요약해 닫는다(첫 PR은 `Part of #5`).
 
+## Dogfooding 2: Hacker News userscript (2026-09, #25) — `apps/hn/`
+
+- 리더(#5)의 마찰이 **XML 특수성**에 치우쳤다는 사용자 지적에서 출발. CLAUDE.md가 말한 빈자리는 프론트엔드 HTML이므로,
+  **남의 마크업**(HN) 위에 필터·mute·하이라이트·읽음 표시를 얹는 userscript로 두 번째 검증.
+- `pnpm hn`(합성 fixture 하네스) / `pnpm hn:build`(단일 `.user.js`, Tampermonkey용, production define으로 dev 체크 제거).
+  실제 사이트에서 Playwright로 확인: 30개 항목, 점수 필터 7/23, 하이라이트, 읽음 표시, reload 후 상태 유지, 오류 0.
+- HTML에서 새로 드러난 것(마찰 기록은 `apps/hn/FRICTION.md`):
+  - **형제 축 없음**: 한 story가 `tr.athing` + 다음 `tr` 두 줄. e5x는 아래로만 가므로 `$el.nextElementSibling`로 이탈.
+    표·정의목록·제목+본문 구조 전부 해당 — 페이지 마크업에서 가장 큰 공백.
+  - **class로 구분**: 자식 접근은 태그 이름 기준이라 `page.tr`이 무의미. `$deep('tr.athing', schema)`(#10)가 이 앱을 지탱.
+  - **텍스트 안의 값**: `713 points` → `'number'` leaf는 NaN. schema에 변환을 걸 자리가 없음.
+  - **attribute+text 요소**: `<a href>제목</a>` — 리더의 Atom text construct와 같은 마찰이 HTML에서는 기본형으로 재현.
+  - `data-*`는 하이픈 때문에 `row['data-e5x-seen']` 꼴.
+- 좋았던 것: 이 앱이 하는 일은 "선택"이 아니라 **DOM에 표시하기**여서 write + element atom + `computed` 조합이 그대로 맞았다.
+  반대로 `$where`/`$sort`/열은 **한 번도 안 씀** — 남의 마크업 위에서는 live set API보다 쓰기·구독이 중심.
+- 리더 `FRICTION.md`에는 항목마다 XML 특수 / 일반 구분을 달았고, HTML 기록에는 일반 항목들이 다시 나왔는지 적었다
+  (element atom은 재현, collection 합치기·스냅숏 뷰는 이 앱에 해당 없음 — 뷰를 만들지 않고 행에 표시만 하므로).
+- 리뷰 1회차가 잡은 것(전부 실제 위험): ① minify가 `// ==UserScript==` 배너를 지워 **설치 불가능한 산출물**이었음
+  (`generateBundle`로 붙이고 `writeBundle`에서 없으면 빌드 실패), ② `tr.athing`은 `/item`의 댓글 행도 포함 →
+  저장된 필터가 **남의 토론 전체를 숨김**(`tr.athing.submission`으로 한정), ③ job post는 댓글 링크가 없어 `span.age`의
+  링크에서 시간을 댓글 수로 읽음(age 내부 링크 제외). fixture에 job·댓글 행·`1,234` 사례가 없어 테스트가 전부 놓쳤다.
+- 2회차: 배너 가드가 첫 줄만 봐서 잘린 블록을 통과시킴(전체 비교로), **`/jobs`는 점수가 아예 없어** 저장된 threshold가
+  페이지를 통째로 비움(`scored` 플래그로 제외 — schema는 "값 없음"을 표현 못 한다, FRICTION 7c), `stop()`이 `<mark>`와
+  `data-*`를 남의 페이지에 남김. 실제 사이트 재확인: threshold 저장 상태에서 `/jobs` 30행 중 0개 숨김, `/item` 정상.
+- 3회차: `scored` 면제가 새 버그를 만듦 — `Story`가 첫 읽기 시점의 스냅숏이라, 두 번째 행이 한 틱 늦게 오면 그 글은
+  **페이지 수명 내내 필터에서 면제**되고 mute해도 byline 행이 남았다. 모든 필드를 getter로 바꾸고, 형제 행 변화를
+  아무도 안 보므로 `wrap(page).subscribe`로 깨운다. 그 대가로 쓰기가 재진입이 되어 **값이 달라질 때만 쓰도록** 바꿨다
+  (가드 없으면 무한 루프로 테스트가 멈춘다). 이게 FRICTION 1b — "형제 축 없음"의 반응성 쪽 비용.
+
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (2026-09 채택)
 
 ```
