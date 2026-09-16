@@ -644,6 +644,57 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   아무도 안 보므로 `wrap(page).subscribe`로 깨운다. 그 대가로 쓰기가 재진입이 되어 **값이 달라질 때만 쓰도록** 바꿨다
   (가드 없으면 무한 루프로 테스트가 멈춘다). 이게 FRICTION 1b — "형제 축 없음"의 반응성 쪽 비용.
 
+## E4X 스펙 정독 + 1차 접목 (2026-09, #28) — `docs/E4X.md`, `test/axes.test.ts`
+
+ECMA-357 전문을 읽고 e5x와 대조한 기록이 `docs/E4X.md`. 거기서 나온 것 중 셋을 접목했다.
+
+- **`in` = `[[HasProperty]]`(§9.1.1.6, §9.2.1.5)** — 추가가 아니라 **수정**이었다. `has` 트랩이 없어
+  `in`이 Proxy target(Element)으로 새서 **데이터엔 `false`, DOM 이름(`title`/`id`)엔 `true`**를 냈다.
+  이제 자식·속성을 묻고, collection은 인덱스 범위 또는 "어떤 멤버가 그 이름을 가졌는가". loose 모드의
+  존재 확인이 `$length.get()` 말고 `in`으로도 된다(README·API 갱신).
+- **`$next`/`$prev`** — E4X에도 형제 축은 없고 `parent()`+`childIndex()`+`.*` 셋으로 우회한다. 페이지
+  마크업엔 직접 필요하므로 멤버 하나로 간다(E4X 충실도보다 HTML 모양). HN FRICTION 1b(형제를 아무도
+  구독하지 않는다)까지 풀린다 — 반환값이 형제에 뿌리내린 atom이라 `wrap(page).subscribe` 없이 그 행만
+  구독 가능. 스키마는 형제의 모양을 모르므로 **loose**, 타입은 그 위에서 `$deep(selector, schema)`로.
+- **`$text`(§13.4.4.37)** — 자기 텍스트 atom. `<a href>제목</a>` 같은 attribute+text 요소(HN 4,
+  reader Atom text construct)에서 속성은 schema로, 텍스트는 `$text`로. 값은 `textContent`라
+  `String(element)`와 같고, E4X `text()`의 "text node 목록"과는 다르다.
+
+접지 않은 것과 이유는 `docs/E4X.md` §4~§5. 특히 **인덱스 대입**은 스펙이 deep copy로 답했지만
+(§11.6.2) e5x의 값은 live 노드라 복제본이 구독·리스너·identity를 잃는다 — 스펙의 답이 옮겨오지 않는
+유일한 자리라 보류 유지. **leaf 문자열 메서드 위임**(§11.2.2.1)은 e5x에 "미스" 신호가 없어(없는 이름 =
+빈 collection, 이건 `$push`가 의존하는 결정) 같은 경로가 데이터 유무에 따라 collection/함수로 갈리므로 거절.
+
+검증 메모:
+
+- 변이 4개를 하나씩 넣어 테스트가 잡는지 확인했다. 그중 하나(`$text`를 element 대신 document에 뿌리내리기)는
+  **11개 중 0개가 실패** — `derived`의 동등 비교가 거친 root를 가려서다. detached 트리 테스트를 추가해 잡았다.
+- 실제 Chromium이 happy-dom이 놓친 픽스처 버그를 잡았다: `<table>` 밖의 `<tr>`은 HTML 파서가 버린다.
+  형제 축 테스트는 진짜 표로 다시 썼다(HN 마크업과도 같아짐).
+- 리뷰 1회차 must-fix: **"형제는 loose"라는 계약에 테스트가 없었다.** `wrapNode(next, null)`을
+  `wrapNode(next, descriptor)`로 바꿔도 113/113 통과 — 모든 테스트가 loose로만 감싸고 있었다.
+  문서에 세 번 적은 성질을 아무도 증명하지 않은 셈. 스키마 있는 부모에서 `$next`가 문자열을 주는지
+  확인하는 테스트 추가. 리뷰어가 제안한 나머지 변이 3개(`$text` atom identity, 프록시 불변식 가드,
+  collection의 `isLibraryName` 가드)도 전부 살아남아 테스트를 붙였다.
+- 리뷰에서 받은 것: `in`이 `toString`/`valueOf`(+`Symbol.toPrimitive`)에도 답해야 한다 —
+  `coerce.ts`의 `RESERVED`를 export해 한 곳에서 관리. 일관성을 위해 column(위치만)과 `$attr`
+  (속성만)에도 `has`를 붙였다.
+- 리뷰 2회차(must-fix 0, suggestion 5)에서 받은 것: ① `has`가 proxy 불변식의 **절반만** 막았다 —
+  non-configurable own property는 봤지만 non-extensible target의 own property는 안 봐서,
+  `el.foo = 1; Object.preventExtensions(el)` 뒤의 `'foo' in wrap(el)`이 **throw**했다(이전엔 던지지 않던
+  연산). ② `in`이 coercion 훅에 element는 `true`, collection/column은 `false`로 답했다(get trap은 셋 다
+  서비스) → `RESERVED`를 세 곳에서 공유. ③ `has`에 넣은 `noteRead`를 지워도 120/120 통과 — 1회차 must-fix와
+  같은 부류(증명되지 않은 성질)라 dev 테스트 추가. ④ `in`과 `for…in`이 정면으로 어긋난다(`'title' in el`은
+  false인데 열거는 `title`을 낸다) — E4X는 열거도 데이터지만 `ownKeys` 트랩이 필요해 문서화만. ⑤ `$next`로
+  잡은 구독은 형제가 **교체되면** 조용히 죽는다(atom이 관계가 아니라 그 요소에 뿌리내리므로) — 문서화.
+  변이 4개로 새 테스트가 각각 잡는 것을 확인(각각 1개 실패).
+
+- **`$text`를 dep으로 쓸 때의 정밀도**: `derived`가 atom을 "subtree 전체" source로 등록해서,
+  `$text`를 dep으로 주면 바깥 **속성** 읽기까지 covered로 판정돼 정적 경고가 죽었다. `dev.ts`에
+  `TEXT` 종류를 추가해 "그 이름의 child text가 있을 때만 커버"로 좁혔다. 같은 이름 child가 있는데
+  `$attr`로 명시적으로 읽는 경우는 여전히 조용한데, 그건 e5x가 문서화한 attr/child 충돌 자리이고
+  오탐보다 미탐을 택한 것.
+
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (2026-09 채택)
 
 ```
@@ -717,9 +768,10 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
 - 필드 이름 `get`/`subscribe`는 schema에서 금지, loose 모드에선 collection 레벨 열로 접근 불가
   (atom 프로토콜과 맞바꾼 비용).
 - inline arrow predicate/comparator는 매번 새 함수라 뷰 공유 불가 — 공유하려면 함수를 끌어올릴 것.
-- 크기: sub-kB 미학에서 멀어지는 중. 앱 production 번들(minify+gzip) 3.69kB, 예산 4.0kB (`pnpm size`).
-  캐시 계층 + Phase 10 API + #2 캐시 해제. `production` 조건을 안 쓰는 번들러(esbuild·Rollup 기본)에는
-  dev 체크 코드가 남는다(비활성, 4.36kB).
+- 크기: sub-kB 미학에서 멀어지는 중. 앱 production 번들(minify+gzip) 4.06kB, 예산 4.2kB (`pnpm size`).
+  캐시 계층 + Phase 10 API + #2 캐시 해제 + #28 축 3개. `production` 조건을 안 쓰는 번들러(esbuild·Rollup
+  기본)에는 dev 체크 코드가 남는다(비활성, 4.76kB). **크기로 기능을 거르지 않기로 함 (사용자 결정
+  2026-09-16)** — 예산은 드리프트 감지용이고, 필요한 멤버는 넣고 예산을 올린다.
 - deps 누락은 dev에서만, best-effort로 탐지: proxy 밖 읽기는 상태가 바뀐 뒤 읽힐 때만, 구독만 하고
   읽지 않는 뷰는 못 잡음. 같은 틱에 계산→외부 변경→읽기도 놓침.
 - 배열 값 atom(Column 등)을 dep으로 쓰면 `get()`이 매번 새 배열이라 memo가 무력화 (정확성은 유지).

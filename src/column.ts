@@ -1,6 +1,6 @@
 import { derived, memo, type Inputs } from './reactive'
 import { registerSource } from './dev'
-import { fromDom } from './coerce'
+import { fromDom, RESERVED } from './coerce'
 import type { Column, LeafDescriptor, NumericColumn, ReadableAtom } from './types'
 
 type Leaf = string | number | boolean
@@ -108,6 +108,21 @@ export function createColumn(config: ColumnConfig): LeafColumn {
       return false
     },
     deleteProperty() {
+      return false
+    },
+    // A column holds values, so beyond its own library surface `in` is about positions.
+    has(target, key) {
+      if (Object.hasOwn(target, key)) {
+        return true
+      }
+      // The coercion hooks the get trap serves, answered the same way a wrapped element does.
+      if (key === Symbol.toPrimitive || (typeof key === 'string' && RESERVED.has(key))) {
+        return true
+      }
+      if (typeof key === 'string') {
+        const index = Number(key)
+        return Number.isInteger(index) && index >= 0 && index < values().length
+      }
       return false
     },
   }) as unknown as LeafColumn

@@ -5,7 +5,12 @@ export function isLibraryName(key: string): boolean {
   return key.startsWith('$')
 }
 
-const RESERVED = new Set(['get', 'subscribe', 'toString', 'valueOf'])
+/**
+ * The bare names the library claims: the atom protocol and the JS coercion hooks.
+ *
+ * A schema may not use them, and `in` answers for them rather than for data with the same name.
+ */
+export const RESERVED = new Set(['get', 'subscribe', 'toString', 'valueOf'])
 const validated = new WeakSet<NodeDescriptor>()
 
 /**

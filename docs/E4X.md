@@ -137,6 +137,18 @@ deliberately. The cost is now named.
 
 ## 4. Questions e5x left open that the spec already answers
 
+Three of these were taken in #28 and are marked below; the rest stayed open, with reasons.
+
+### 4.0 `in` — the one the spec did not answer so much as expose
+
+`[[HasProperty]]` (§9.1.1.6, §9.2.1.5) asks the element about its children and attributes. e5x had
+no `has` trap, so `in` reached the proxy target and answered for `Element.prototype`: `false` for
+`'item'` and `'vendor'` that exist, `true` for `'title'` and `'id'` that do not. The spec's rule was
+also the fix, and it gives loose mode the presence test the README had to spell out as
+`$length.get()`.
+
+**Status:** grafted (#28), on wrapped elements and collections.
+
 ### 4.1 What `collection[i] = x` should mean
 
 CLAUDE.md parks this: "대입을 element 교체로 의미 부여하는 안은 보류(복사 vs 이동 의미론 미결)".
@@ -152,6 +164,12 @@ Note which type throws: **XML** `[[Put]]` with a numeric name throws `TypeError`
 future versions", §9.1.1.2 step 3), while **XMLList** `[[Put]]` with an index assigns. e5x's
 collection corresponds to XMLList, so today's `TypeError` on `c[0] = x` is the XML rule applied to
 the XMLList position.
+
+**Status:** still on hold, and the reading changed why. The spec's answer is conditioned on E4X
+values being trees you own: assignment inserts copies everywhere. e5x's values are live nodes, so a
+copy would leave every subscription, listener and cached proxy pointing at the original while the
+clone is what the page shows. This is the one place where the spec has an answer and it does not
+transfer. `$push` also already covers the append idiom, which Minimal argues against duplicating.
 
 ### 4.2 Writing through a path that does not exist yet
 
@@ -170,6 +188,10 @@ the workaround is `x.parent().*[x.childIndex() + 1]`. e5x has neither, which is 
 leave through `$el.nextElementSibling` (FRICTION 1). Two members — a parent and an index — would put
 the same workaround back inside the vocabulary.
 
+**Status:** grafted (#28) as `$next` / `$prev`, one member instead of E4X's three. They return the
+sibling as a loose wrapped element, which is an atom, so friction 1b is covered too: a row can
+subscribe to its own byline instead of the whole page.
+
 ### 4.4 Combining lists
 
 `+` concatenates two XML/XMLList values into a new XMLList (§11.4.1); `+=` on a list-valued path
@@ -183,6 +205,14 @@ base is an XML object with simple content — to `ToObject(ToString(base))`. So 
 and `shipto.citystatezip.split(", ")` work with no explicit text selection. In e5x an unknown
 non-`$` name on a leaf is `undefined`; delegating to the string value would not collide with the
 `$`-prefix rule.
+
+**Status:** rejected. The fallback needs a detectable miss. In e5x a missing loose name is an empty
+collection — a deliberate decision `$push` and `subscribe` depend on — so there is no miss to hook,
+and delegating would make the same path yield a collection for one element and a function for
+another, depending on whether the data happens to be there. Typed leaves and loose attributes are
+already plain strings, so `.toUpperCase()` works on them today. The remaining gap is a loose child
+element's text, where `$text` (§13.4.4.37, grafted in #28) reaches the value — on the element, so
+`row.note[0]!.$text`, since `row.note` is a collection and collections have no `$text`.
 
 ### 4.6 Wildcards
 

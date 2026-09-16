@@ -1,3 +1,4 @@
+import { childrenNamed } from './coerce'
 import type { Deps } from './types'
 
 // Development-only diagnostics, off when `process.env.NODE_ENV` is 'production'. Bundlers
@@ -27,9 +28,12 @@ export const DEV: boolean =
 
 // What an atom reads, so a dep list can be matched against the reads a predicate makes.
 // `field: null` means the whole subtree under `node`.
+/** Marks an atom that follows only the text under its node, such as `$text`. */
+export const TEXT = Symbol('text')
+
 interface Source {
   node: Node
-  field: string | null
+  field: string | null | typeof TEXT
 }
 
 const sources = new WeakMap<object, Source>()
@@ -39,9 +43,13 @@ const sources = new WeakMap<object, Source>()
  *
  * Does nothing outside development.
  *
- * @param field The field the atom mirrors, or `null` when it depends on the whole subtree under `node`.
+ * @param field The field the atom mirrors, {@linkcode TEXT} when it follows only the text under `node`, or `null` when it depends on the whole subtree.
  */
-export function registerSource(atom: object, node: Node, field: string | null = null): void {
+export function registerSource(
+  atom: object,
+  node: Node,
+  field: string | null | typeof TEXT = null,
+): void {
   if (DEV) {
     sources.set(atom, { node, field })
   }
@@ -50,6 +58,15 @@ export function registerSource(atom: object, node: Node, field: string | null = 
 function covers(source: Source | undefined, node: Node, field: string): boolean {
   if (!source) {
     return false
+  }
+  if (source.field === TEXT) {
+    // Covers the read only where the field is stored as child text, which is what the atom sees.
+    // A same-name child makes an explicit `$attr` read look covered; that is the attribute/child
+    // collision e5x documents, and the direction that stays quiet rather than crying wolf.
+    return (
+      (source.node === node || source.node.contains(node)) &&
+      childrenNamed(node as Element, field).length > 0
+    )
   }
   if (source.field === null) {
     return source.node === node || source.node.contains(node)

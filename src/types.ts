@@ -199,6 +199,24 @@ export interface WrappedBase {
    * @throws {TypeError} When `type` is not `'string'`, `'number'`, or `'boolean'`.
    */
   $deep<const L extends LeafType>(name: string, type: L): ColumnFor<L>
+  /**
+   * The element's own text, as an atom — E4X's `text()`.
+   *
+   * The value is `textContent`, so it includes the text of descendants, which is what
+   * `String(element)` gives. Unlike E4X's `text()` it is one value rather than a list of text
+   * nodes. Use it for markup that carries attributes and text at once, such as `<a href="…">`.
+   */
+  readonly $text: ReadableAtom<string>
+  /**
+   * The next sibling element, wrapped without a schema, or `null` at the end.
+   *
+   * E4X has no sibling axis; page markup needs one, because a table row's data often sits in the
+   * row after it. The result is loose because a sibling's shape is not in this element's schema —
+   * reach typed fields through `$deep(selector, schema)` on it.
+   */
+  readonly $next: LooseWrapped | null
+  /** The previous sibling element, wrapped without a schema, or `null` at the start. */
+  readonly $prev: LooseWrapped | null
 }
 
 /**
@@ -520,6 +538,12 @@ export interface LooseWrapped {
    * @throws {TypeError} When `type` is not `'string'`, `'number'`, or `'boolean'`.
    */
   $deep<const L extends LeafType>(name: string, type: L): ColumnFor<L>
+  /** The element's own text, as an atom — E4X's `text()`. */
+  readonly $text: ReadableAtom<string>
+  /** The next sibling element, wrapped without a schema, or `null` at the end. */
+  readonly $next: LooseWrapped | null
+  /** The previous sibling element, wrapped without a schema, or `null` at the start. */
+  readonly $prev: LooseWrapped | null
   /** Returns the wrapped element itself. */
   get(): LooseWrapped
   /**
@@ -531,8 +555,8 @@ export interface LooseWrapped {
   /**
    * Reads a child collection when children with that name exist, else the attribute value, else an empty collection.
    *
-   * The empty collection is still an object, so it is truthy: test presence with `$length`.
-   * Assigning writes the first matching child's text, or the attribute.
+   * The empty collection is still an object, so it is truthy: test presence with `in` or
+   * `$length`. Assigning writes the first matching child's text, or the attribute.
    */
   [key: string]: any
 }

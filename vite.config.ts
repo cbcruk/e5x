@@ -42,6 +42,7 @@ export default defineConfig(({ mode }) => ({
           name: 'chromium',
           include: [
             'test/atoms.test.ts',
+            'test/axes.test.ts',
             'test/memo.test.ts',
             'test/wrap.test.ts',
             'test/dev.test.ts',
