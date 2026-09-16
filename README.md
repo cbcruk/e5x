@@ -89,13 +89,20 @@ distinguish from a property read. The only bare names e5x claims are the atom pr
 In loose mode a name that is neither a child nor an attribute reads as an **empty collection**,
 as in E4X. That is what lets `wrap(todos).todo.$push(...)` and `.todo.$length.subscribe(...)`
 work before the first child exists — but an empty collection is still an object, so it is
-truthy. Test for presence with `$length`, not truthiness:
+truthy. Test for presence with `in` or `$length`, not truthiness:
 
 ```ts
-if (row.note.$length.get() > 0) {
+if ('note' in row) {
   /* ... */
 } // not: if (row.note)
+
+if (row.note.$length.get() > 0) {
+  /* ... */
+} // the same question, when you want the count anyway
 ```
+
+`in` is E4X's `[[HasProperty]]`: it answers for children and attributes, on wrapped elements and
+on collections (where a number asks whether that index exists).
 
 With a schema, missing leaves coerce instead (`''`, `NaN`, `false`).
 

@@ -23,6 +23,9 @@ import type {
 
 const cache = new WeakMap<Element, Map<NodeDescriptor | null, object>>()
 
+// The `$` members a wrapped element has, so `in` answers for the library surface too.
+const MEMBERS = new Set(['$el', '$attr', '$', '$deep', '$text', '$next', '$prev'])
+
 function attributeView(element: Element): Record<string, string | null> {
   return new Proxy({} as Record<string, string | null>, {
     get: (_target, key) => {
@@ -85,6 +88,21 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
     return collection
   }
 
+  // E4X's `text()`: the element's own text, as an atom so one text can be subscribed to alone.
+  let textAtom: ReadableAtom<string> | null = null
+  const text = (): ReadableAtom<string> => {
+    if (!textAtom) {
+      textAtom = derived(element, () => element.textContent ?? '')
+      registerSource(textAtom, element)
+    }
+    return textAtom
+  }
+
+  // The sibling axes E4X does without: page markup keeps related data in the next row, not below.
+  // Loose, because a sibling's shape is not described by this element's schema.
+  const sibling = (next: Element | null): LooseWrapped | null =>
+    next ? wrapNode(next, null) : null
+
   // The element as an atom: its value is the wrapped element, emitted on any subtree change.
   const get = (): unknown => proxy
   const subscribe = (listener: (element: unknown) => void): (() => void) => {
@@ -140,6 +158,15 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
       if (key === '$deep') {
         return deep
       }
+      if (key === '$text') {
+        return text()
+      }
+      if (key === '$next') {
+        return sibling(target.nextElementSibling)
+      }
+      if (key === '$prev') {
+        return sibling(target.previousElementSibling)
+      }
       if (typeof key === 'symbol') {
         return Reflect.get(target, key)
       }
@@ -174,6 +201,26 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
       writeField(target, key, value, descriptor?.[key])
       return true
     },
+    // E4X's [[HasProperty]] (§9.1.1.6): `in` asks about children and attributes. Without this
+    // trap it reached the target element instead, so it answered for `Element.prototype` —
+    // false for real data, true for DOM names like `title` and `id`.
+    has(target, key) {
+      if (typeof key === 'symbol') {
+        return Reflect.has(target, key)
+      }
+      // A proxy may not deny a non-configurable own property of its target.
+      if (Reflect.getOwnPropertyDescriptor(target, key)?.configurable === false) {
+        return true
+      }
+      if (key === 'get' || key === 'subscribe') {
+        return true
+      }
+      if (isLibraryName(key)) {
+        return MEMBERS.has(key)
+      }
+      if (DEV) noteRead(target, key)
+      return childrenNamed(target, key).length > 0 || target.hasAttribute(key)
+    },
   })
 
   registerSource(proxy, element)
@@ -185,8 +232,8 @@ export function wrapNode(element: Element, descriptor: NodeDescriptor | null): a
  * Wraps a DOM element without a schema, so fields read as strings or collections.
  *
  * Loose mode is for exploring markup. A name that is neither a child element nor an attribute
- * reads as an empty collection, as in E4X, so test presence with `$length`, not truthiness.
- * Pass a schema to get typed, coerced fields.
+ * reads as an empty collection, as in E4X, so test presence with `in` or `$length`, not
+ * truthiness. Pass a schema to get typed, coerced fields.
  *
  * @example Explore markup
  * ```ts

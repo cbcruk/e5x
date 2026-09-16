@@ -378,15 +378,19 @@ export function createCollection(config: CollectionConfig): LooseCollection {
       }
       return false
     },
+    // E4X's XMLList [[HasProperty]] (§9.2.1.5): an index within range, or a name any member has.
     has(target, key) {
       if (Object.hasOwn(target, key)) {
         return true
       }
-      if (typeof key === 'string') {
+      if (typeof key === 'string' && !isLibraryName(key)) {
         const index = isIndex(key)
         if (index !== null) {
           return index < compute().length
         }
+        return compute().some(
+          (element) => childrenNamed(element, key).length > 0 || element.hasAttribute(key),
+        )
       }
       return false
     },

@@ -23,7 +23,8 @@ Conventions used below:
 - [Schemas](#schemas): `NodeDescriptor`, `FieldDescriptor`, `LeafDescriptor`, `LeafType`,
   `ReservedName`, `ValidDescriptor`
 - [Atoms](#atoms): `ReadableAtom`, `Deps`
-- [Wrapped elements](#wrapped-elements): `Wrapped`, `LooseWrapped`, `$el`, `$attr`, `$`, `$deep`
+- [Wrapped elements](#wrapped-elements): `Wrapped`, `LooseWrapped`, `$el`, `$attr`, `$`, `$deep`,
+  `$text`, `$next`, `$prev`
 - [Collections](#collections): `Collection`, `LooseCollection`, `Predicate`, `WritableFields`,
   `SortDirection`, `$length`, `$where`, `$sort`, `$deep`, `$push`
 - [Columns](#columns): `Column`, `NumericColumn`, `$length`, `$values`, `$sum`, `$avg`, `$min`,
@@ -43,7 +44,7 @@ the same schema object returns the same proxy.
   reads `=== 'true'`. Missing leaves read as `''`, `NaN`, or `false`.
 - **Without one** (loose mode), a name reads as the child collection when children with that name
   exist, else the attribute, else an empty collection. An empty collection is truthy, so test
-  presence with `$length`.
+  presence with `in` or `$length`.
 - **Writes** go through `String(value)`. A write goes to the text of an existing child element with
   that name, whatever the schema says. With no such child, it creates the storage the schema
   names: an attribute, or a child element for `'<type>'` leaves. Loose mode writes the attribute.
@@ -270,7 +271,7 @@ stop()
 An element wrapped without a schema. It has the same escape hatches and atom protocol; every other
 field is `any`, read as described under [`wrap`](#wrapelement-schema).
 
-**Type:** `interface LooseWrapped { $el; $attr; $; $deep; get; subscribe; [key: string]: any }`
+**Type:** `interface LooseWrapped { $el; $attr; $; $deep; $text; $next; $prev; get; subscribe; [key: string]: any }`
 
 ```ts
 import { wrap } from 'e5x'
@@ -360,6 +361,65 @@ const cheapest: number | undefined = items.price.$min.get()
 
 const prices = catalog.$deep('price', 'number')
 const total: number = prices.$sum.get()
+```
+
+### `element.$text`
+
+The element's own text, as an atom — E4X's `text()`. The value is `textContent`, the same string
+`String(element)` gives, so it includes the text of descendants. It is one value rather than E4X's
+list of text nodes. Use it where an element carries attributes and text at once, such as
+`<a href="…">title</a>`, and to subscribe to that text alone rather than the whole subtree.
+
+**Type:** `readonly $text: ReadableAtom<string>`
+
+```ts
+import { wrap } from 'e5x'
+
+const page = wrap(document.querySelector('page')!)
+const link = page.$deep('a', { href: 'string' } as const)[0]!
+const href: string = link.href
+const stop = link.$text.subscribe((title) => {
+  document.title = title
+})
+stop()
+```
+
+### `element.$next`
+
+The next sibling element, wrapped without a schema, or `null` at the end. E4X has no sibling axis —
+it composes the same walk from `parent()`, `childIndex()` and `.*`. Page markup needs one directly,
+because a table row's data often sits in the row after it.
+
+The result is loose: a sibling's shape is not part of this element's schema. Reach its typed
+fields with `$deep(selector, schema)` on it. Because a wrapped element is an atom, the sibling can
+also be subscribed to on its own, without watching the whole page.
+
+**Type:** `readonly $next: LooseWrapped | null`
+
+```ts
+import { computed, wrap } from 'e5x'
+
+const page = wrap(document.querySelector('page')!)
+const story = page.$deep('tr.athing')[0]!
+const byline = story.$next!
+const score = computed([byline], () => byline.$deep('span.score')[0]!.$text.get())
+const stop = score.subscribe((points) => console.log(points))
+stop()
+```
+
+### `element.$prev`
+
+The previous sibling element, wrapped without a schema, or `null` at the start. The mirror of
+[`$next`](#elementnext).
+
+**Type:** `readonly $prev: LooseWrapped | null`
+
+```ts
+import { wrap } from 'e5x'
+
+const page = wrap(document.querySelector('page')!)
+const byline = page.$deep('tr.byline')[0]!
+const storyRow = byline.$prev
 ```
 
 ## Collections
