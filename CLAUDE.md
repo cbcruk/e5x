@@ -615,6 +615,23 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   construct(WordPress `type="html"`), xhtml의 script/style 텍스트, BOM 우선 디코딩, 겹친 새로고침은 최신 것만 반영.
 - #5는 이 앱을 **실제로 사용한 뒤** 기록을 요약해 닫는다(첫 PR은 `Part of #5`).
 
+## Dogfooding 2: Hacker News userscript (2026-09, #25) — `apps/hn/`
+
+- 리더(#5)의 마찰이 **XML 특수성**에 치우쳤다는 사용자 지적에서 출발. CLAUDE.md가 말한 빈자리는 프론트엔드 HTML이므로,
+  **남의 마크업**(HN) 위에 필터·mute·하이라이트·읽음 표시를 얹는 userscript로 두 번째 검증.
+- `pnpm hn`(합성 fixture 하네스) / `pnpm hn:build`(단일 `.user.js`, Tampermonkey용, production define으로 dev 체크 제거).
+  실제 사이트에서 Playwright로 확인: 30개 항목, 점수 필터 7/23, 하이라이트, 읽음 표시, reload 후 상태 유지, 오류 0.
+- HTML에서 새로 드러난 것(마찰 기록은 `apps/hn/FRICTION.md`):
+  - **형제 축 없음**: 한 story가 `tr.athing` + 다음 `tr` 두 줄. e5x는 아래로만 가므로 `$el.nextElementSibling`로 이탈.
+    표·정의목록·제목+본문 구조 전부 해당 — 페이지 마크업에서 가장 큰 공백.
+  - **class로 구분**: 자식 접근은 태그 이름 기준이라 `page.tr`이 무의미. `$deep('tr.athing', schema)`(#10)가 이 앱을 지탱.
+  - **텍스트 안의 값**: `713 points` → `'number'` leaf는 NaN. schema에 변환을 걸 자리가 없음.
+  - **attribute+text 요소**: `<a href>제목</a>` — 리더의 Atom text construct와 같은 마찰이 HTML에서는 기본형으로 재현.
+  - `data-*`는 하이픈 때문에 `row['data-e5x-seen']` 꼴.
+- 좋았던 것: 이 앱이 하는 일은 "선택"이 아니라 **DOM에 표시하기**여서 write + element atom + `computed` 조합이 그대로 맞았다.
+  반대로 `$where`/`$sort`/열은 **한 번도 안 씀** — 남의 마크업 위에서는 live set API보다 쓰기·구독이 중심.
+- 리더 `FRICTION.md`에는 항목마다 XML 특수 / 일반 구분을 달았다.
+
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (2026-09 채택)
 
 ```
