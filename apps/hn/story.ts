@@ -46,11 +46,15 @@ function count(text: string): number {
 const text = (root: Element | null, selector: string): string =>
   root?.querySelector(selector)?.textContent?.trim() ?? ''
 
-// The comments link is the last link to the item; the age holds another one, earlier in the row.
-// Checked in JS rather than with `a[href^="item?id="]`, which happy-dom does not match.
+// The comments link is the last link to the item, but `span.age` holds one too, and a job post
+// has only that one — so links inside the age are never the comments link. Checked in JS rather
+// than with `a[href^="item?id="]`, which happy-dom does not match.
 const commentText = (subtext: Element | null): string =>
   Array.from(subtext?.querySelectorAll('a') ?? [])
-    .filter((link) => link.getAttribute('href')?.startsWith('item?id=') ?? false)
+    .filter(
+      (link) =>
+        (link.getAttribute('href')?.startsWith('item?id=') ?? false) && !link.closest('span.age'),
+    )
     .at(-1)?.textContent ?? ''
 
 function story(row: Row): Story {
@@ -94,11 +98,17 @@ function story(row: Row): Story {
   }
 }
 
-/** The story rows of a page, as a live collection: `tr.athing` under the main table. */
+/**
+ * The story rows of a page, as a live collection.
+ *
+ * `tr.athing.submission`, not `tr.athing`: comment rows on `/item` and `/threads` are also
+ * `tr.athing`, and they have no score or comments link, so a stored threshold would hide a whole
+ * discussion on someone else's page.
+ */
 export function storyRows(page: Element): Collection<typeof rowSchema> {
   // FRICTION: children match by tag name, and every row here is a `<tr>`. The selector form of
   // `$deep` is the only way to say "the rows that are stories".
-  return wrap(page).$deep('tr.athing', rowSchema)
+  return wrap(page).$deep('tr.athing.submission', rowSchema)
 }
 
 /** Reads the stories of a page, live: the atom emits when rows are added, removed, or reordered. */

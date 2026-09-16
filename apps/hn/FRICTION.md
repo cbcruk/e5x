@@ -20,10 +20,14 @@ sections all put related data in siblings.
 
 ### 2. Children match by tag name, and HTML tells elements apart by class — workaround (general, new)
 
-Every row here is a `<tr>`; what distinguishes them is `class="athing"`. `page.tr` would give all
-rows, so the story list is `$deep('tr.athing', schema)`. That works — the selector form of `$deep`
-(#10) carried this app — but it means the shape-matched path (`page.tr`) is useless on real HTML,
-and the selector goes back to CSS.
+Every row here is a `<tr>`, and what distinguishes them is `class`. Child access is worse than it
+first looks: the stories sit in a nested table, so `wrap(page).tr` returns the **one** wrapper row,
+not the rows (`$deep('tr')` finds 14). Real markup nests, so the shape-matched path is not just
+imprecise here, it does not reach the data at all.
+
+The story list is `$deep('tr.athing.submission', schema)`, and the selector has to be that precise:
+comment rows on `/item` are `tr.athing` too. So the selector form of `$deep` (#10) carried this
+app, and the selector went back to CSS.
 
 ### 3. Values live inside text — workaround (general, new)
 
@@ -56,6 +60,15 @@ bookkeeping.
 `$where` / `$sort` / columns never appeared. The app does not _select_ a subset, it _marks_ every
 row, because the page has to keep its own order and the rows are the UI. On third-party markup the
 useful half of e5x was the live collection, element atoms, and writes.
+
+### 7b. The reader's general entries, revisited
+
+- **No concatenation of collections** (reader 3): did not come up. One page, one list. It is real,
+  but a page-annotating script has nothing to join.
+- **Snapshot lists and deps** (reader 4): did not come up either, and for an instructive reason —
+  this app never builds a filtered view. It marks every row, so there is no view to go stale.
+- **Coarse element atoms** (reader 5): came back and helped again. `filters.ts` persists with one
+  `wrap(element).subscribe`, exactly as the reader saved reading state.
 
 ### 8. The page never gets replaced — not observed here
 

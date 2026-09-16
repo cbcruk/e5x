@@ -630,7 +630,12 @@ dev 판정: `try { process.env.NODE_ENV !== 'production' } catch { true }`. **`t
   - `data-*`는 하이픈 때문에 `row['data-e5x-seen']` 꼴.
 - 좋았던 것: 이 앱이 하는 일은 "선택"이 아니라 **DOM에 표시하기**여서 write + element atom + `computed` 조합이 그대로 맞았다.
   반대로 `$where`/`$sort`/열은 **한 번도 안 씀** — 남의 마크업 위에서는 live set API보다 쓰기·구독이 중심.
-- 리더 `FRICTION.md`에는 항목마다 XML 특수 / 일반 구분을 달았다.
+- 리더 `FRICTION.md`에는 항목마다 XML 특수 / 일반 구분을 달았고, HTML 기록에는 일반 항목들이 다시 나왔는지 적었다
+  (element atom은 재현, collection 합치기·스냅숏 뷰는 이 앱에 해당 없음 — 뷰를 만들지 않고 행에 표시만 하므로).
+- 리뷰 1회차가 잡은 것(전부 실제 위험): ① minify가 `// ==UserScript==` 배너를 지워 **설치 불가능한 산출물**이었음
+  (`generateBundle`로 붙이고 `writeBundle`에서 없으면 빌드 실패), ② `tr.athing`은 `/item`의 댓글 행도 포함 →
+  저장된 필터가 **남의 토론 전체를 숨김**(`tr.athing.submission`으로 한정), ③ job post는 댓글 링크가 없어 `span.age`의
+  링크에서 시간을 댓글 수로 읽음(age 내부 링크 제외). fixture에 job·댓글 행·`1,234` 사례가 없어 테스트가 전부 놓쳤다.
 
 ## 작업 흐름: 이슈 → PR → 리뷰어 에이전트 (2026-09 채택)
 

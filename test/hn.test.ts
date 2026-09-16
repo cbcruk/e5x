@@ -18,7 +18,7 @@ const storage = {
 
 const page = (): Element => document.querySelector('#hnmain')!
 const shown = (): string[] =>
-  Array.from(document.querySelectorAll('tr.athing'))
+  Array.from(document.querySelectorAll('tr.athing.submission'))
     .filter((row) => row.getAttribute('data-e5x-hidden') !== 'true')
     .map((row) => row.querySelector('span.titleline > a')!.textContent ?? '')
 const panel = (selector: string): HTMLElement => document.querySelector(`#e5x-hn ${selector}`)!
@@ -52,7 +52,7 @@ describe('reading stories from markup we do not own', () => {
     })
     const all = stories(page()).get()
 
-    expect(all).toHaveLength(4)
+    expect(all).toHaveLength(6)
     expect(fields(all[0]!)).toEqual({
       id: '101',
       rank: 1,
@@ -66,6 +66,46 @@ describe('reading stories from markup we do not own', () => {
     })
     // "discuss" instead of a comment count, and no site for an Ask HN post.
     expect(fields(all[3]!)).toMatchObject({ id: '104', score: 57, comments: 0, site: '' })
+    // Thousands separators.
+    expect(fields(all[4]!)).toMatchObject({ id: '105', score: 1234, comments: 1024 })
+    // A job post has no score and no comments link, only the age link: neither is a count.
+    expect(fields(all[5]!)).toMatchObject({ id: '106', score: 0, comments: 0 })
+  })
+
+  it('leaves comment rows alone: they are athing, but not submissions', async () => {
+    mount(page(), { storage })
+    await flush()
+    type('min-score', '100')
+    await flush()
+
+    // A stored threshold must never hide a discussion on someone else's page.
+    const comment = document.querySelector('[id="201"]')!
+    expect(comment.classList.contains('athing')).toBe(true)
+    expect(comment.getAttribute('data-e5x-hidden')).toBeNull()
+    expect(
+      stories(page())
+        .get()
+        .some((story) => story.id === '201'),
+    ).toBe(false)
+  })
+
+  it('stops cleanly and refuses to mount twice', async () => {
+    const app = mount(page(), { storage })
+    await flush()
+    const second = mount(page(), { storage })
+    expect(document.querySelectorAll('#e5x-hn')).toHaveLength(1)
+    expect(document.querySelectorAll('e5x-filters')).toHaveLength(1)
+    second.stop()
+
+    app.stop()
+    expect(document.querySelector('#e5x-hn')).toBeNull()
+    expect(document.querySelector('e5x-filters')).toBeNull()
+
+    // Nothing left listening: a write to the page saves nothing.
+    store.delete('e5x-hn:filters')
+    document.querySelector('tr.athing.submission')!.setAttribute('data-e5x-hidden', 'true')
+    await flush()
+    expect(store.has('e5x-hn:filters')).toBe(false)
   })
 })
 
@@ -73,20 +113,24 @@ describe('the filter bar', () => {
   it('hides stories under the score or comment threshold, with their other rows', async () => {
     mount(page(), { storage })
     await flush()
-    expect(shown()).toHaveLength(4)
+    expect(shown()).toHaveLength(6)
 
     type('min-score', '100')
     await flush()
-    expect(shown()).toEqual(['A well-liked post', 'Another noisy domain post'])
+    expect(shown()).toEqual([
+      'A well-liked post',
+      'Another noisy domain post',
+      'A post with many points',
+    ])
     // The subtext row and the spacer follow the story row.
     const hiddenRow = document.getElementById('102')!
     expect(hiddenRow.nextElementSibling!.getAttribute('data-e5x-hidden')).toBe('true')
-    expect(panel('.count').textContent).toBe('2 shown, 2 hidden')
+    expect(panel('.count').textContent).toBe('3 shown, 3 hidden')
 
     type('min-score', '0')
     type('min-comments', '9')
     await flush()
-    expect(shown()).toEqual(['A well-liked post'])
+    expect(shown()).toEqual(['A well-liked post', 'A post with many points'])
   })
 
   it('mutes domains and keeps the filters after a reload', async () => {
@@ -94,12 +138,22 @@ describe('the filter bar', () => {
     await flush()
     type('muted', 'noisy.example')
     await flush()
-    expect(shown()).toEqual(['A well-liked post', 'Ask HN: a post with no site'])
+    expect(shown()).toEqual([
+      'A well-liked post',
+      'Ask HN: a post with no site',
+      'A post with many points',
+      'Example Corp is hiring',
+    ])
 
     document.body.innerHTML = new DOMParser().parseFromString(fixture, 'text/html').body.innerHTML
     mount(page(), { storage })
     await flush()
-    expect(shown()).toEqual(['A well-liked post', 'Ask HN: a post with no site'])
+    expect(shown()).toEqual([
+      'A well-liked post',
+      'Ask HN: a post with no site',
+      'A post with many points',
+      'Example Corp is hiring',
+    ])
     expect((panel('[data-field="muted"]') as HTMLInputElement).value).toBe('noisy.example')
   })
 
@@ -162,6 +216,6 @@ describe('the filter bar', () => {
     await flush()
 
     expect(shown()).not.toContain('A late arrival')
-    expect(panel('.count').textContent).toBe('2 shown, 3 hidden')
+    expect(panel('.count').textContent).toBe('3 shown, 4 hidden')
   })
 })

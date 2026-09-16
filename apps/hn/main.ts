@@ -62,6 +62,8 @@ function highlightTitles(story: Story, words: string[]): void {
 /** Adds the filter bar to a Hacker News page and keeps the rows in step with it. */
 export function mount(page: Element, options: Options = {}): { stop(): void } {
   const document = page.ownerDocument
+  // Someone else's page: never add a second bar, which would duplicate an id and fight the first.
+  if (document.getElementById('e5x-hn')) return { stop: () => {} }
   const storage = options.storage ?? localStorage
   const sheet = document.createElement('style')
   sheet.textContent = style
@@ -72,10 +74,12 @@ export function mount(page: Element, options: Options = {}): { stop(): void } {
   panel.innerHTML = bar
   page.parentElement?.insertBefore(panel, page)
 
-  const filters = createFilters(page.ownerDocument.body, storage)
+  const stops: (() => void)[] = []
+  const filterState = createFilters(page.ownerDocument.body, storage)
+  const filters = filterState.filters
+  stops.push(filterState.stop)
   const seen = loadSeen(storage)
   const list$ = stories(page)
-  const stops: (() => void)[] = []
 
   for (const input of panel.querySelectorAll<HTMLInputElement>('[data-field]')) {
     const field = input.dataset.field!

@@ -35,11 +35,17 @@ export function list(value: string): string[] {
     .filter(Boolean)
 }
 
+/** A filter element, plus the way to remove it and stop saving. */
+export interface FilterState {
+  filters: Filters
+  stop(): void
+}
+
 /** Creates the filter element from saved state and appends it to `root`. */
 export function createFilters(
   root: Element,
   storage: Pick<Storage, 'getItem' | 'setItem'>,
-): Filters {
+): FilterState {
   const element = root.ownerDocument.createElement('e5x-filters')
   let saved: Record<string, unknown> = {}
   try {
@@ -55,12 +61,18 @@ export function createFilters(
   root.append(element)
   const filters = wrap(element, filterSchema)
   // Save on any change to the element, whatever caused it.
-  wrap(element).subscribe(() => {
+  const stopSaving = wrap(element).subscribe(() => {
     const state: Record<string, string> = {}
     for (const name of Object.keys(defaults)) state[name] = element.getAttribute(name) ?? ''
     storage.setItem(STORAGE_KEY, JSON.stringify(state))
   })
-  return filters
+  return {
+    filters,
+    stop() {
+      stopSaving()
+      element.remove()
+    },
+  }
 }
 
 /** Reads the ids of stories already seen. */
